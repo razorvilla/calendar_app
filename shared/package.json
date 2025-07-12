@@ -1,0 +1,18 @@
+{
+  "name": "calendar-app-shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for Calendar App",
+  "scripts": {
+    "migrate:dev": "knex migrate:latest --env development",
+    "migrate:test": "knex migrate:latest --env test",
+    "migrate:rollback": "knex migrate:rollback --env development",
+    "migrate:rollback:test": "knex migrate:rollback --env test",
+    "seed:dev": "knex seed:run --env development"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "knex": "^2.4.2",
+    "pg": "^8.9.0",
+    "uuid": "^11.1.0"
+  }
+}

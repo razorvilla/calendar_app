@@ -1,0 +1,50 @@
+{
+  "name": "notification-service",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "notification",
+    "microservice",
+    "calendar"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Notification microservice for the Calendar application",
+  "dependencies": {
+    "@graphql-tools/schema": "^10.0.23",
+    "apollo-server-express": "^3.13.0",
+    "axios": "^1.8.3",
+    "bull": "^4.11.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^11.10.1",
+    "graphql": "^16.10.0",
+    "graphql-iso-date": "^3.6.1",
+    "graphql-type-json": "^0.3.2",
+    "helmet": "^8.1.0",
+    "joi": "^17.9.2",
+    "jsonwebtoken": "^9.0.1",
+    "kafkajs": "^2.2.4",
+    "mongodb-memory-server": "^10.1.4",
+    "mongoose": "^7.5.0",
+    "node-cron": "^3.0.2",
+    "nodemailer": "^6.9.5",
+    "redis": "^4.6.7",
+    "twilio": "^4.19.0",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.47.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.28.1",
+    "jest": "^29.6.3",
+    "nodemon": "^3.1.9",
+    "supertest": "^6.3.3"
+  }
+}

@@ -1,0 +1,417 @@
+/* Calendar-specific styles */
+:root {
+    --primary-50: #fff7ed;
+    --primary-100: #ffedd5;
+    --primary-200: #fed7aa;
+    --primary-300: #fdba74;
+    --primary-400: #fb923c;
+    --primary-500: #f97316;
+    --primary-600: #ea580c;
+    --primary-700: #c2410c;
+    --primary-800: #9a3412;
+    --primary-900: #7c2d12;
+}
+
+/* Basic reset for full-screen layout */
+html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Reset button styles */
+button {
+    background-color: transparent;
+    border: none;
+    color: inherit;
+}
+
+.color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: transform 0.2s ease;
+}
+
+li:hover .color-dot {
+    transform: scale(1.2);
+}
+
+/* Improved toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 22px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Orange theme */
+input:checked + .toggle-slider {
+    background-color: var(--primary-500);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+}
+
+.dark-mode {
+    background-color: #1F2937;
+    color: #F9FAFB;
+}
+
+/* Fix for dark mode elements */
+.dark-mode button:not([class*="bg-"]):not(.mini-calendar-day) {
+    background-color: transparent;
+}
+
+.dark-mode .calendar-cell {
+    border-color: #374151;
+}
+
+.dark-mode .calendar-cell:hover {
+    background-color: #374151;
+}
+
+.dark-mode .time-slot {
+    border-color: #374151;
+    color: #9CA3AF;
+}
+
+/* Style for week date in header */
+.week-date {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-weight: 500;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Updated to orange */
+.today .week-date {
+    background-color: var(--primary-500);
+    color: white;
+    box-shadow: 0 2px 4px rgba(249, 115, 22, 0.3);
+}
+
+/* Current time indicator */
+.current-time-indicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: 2px solid var(--primary-500);
+    z-index: 10;
+}
+
+.current-time-indicator:before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    background-color: var(--primary-500);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(249, 115, 22, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
+    }
+}
+
+/* For dragging events */
+.dragging {
+    opacity: 0.7;
+    cursor: grabbing;
+}
+
+/* Event styles */
+.event-container {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.event-wrapper {
+    position: absolute;
+    width: 100%;
+    pointer-events: auto;
+}
+
+/* Event card styling */
+.event-card {
+    background-color: rgba(249, 115, 22, 0.1);
+    border-left: 3px solid var(--primary-500);
+    margin: 2px 4px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.event-card:hover {
+    background-color: rgba(249, 115, 22, 0.15);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+/* Mini calendar day styling */
+.mini-calendar-day {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: transparent;
+}
+
+.mini-calendar-day:hover {
+    background-color: var(--primary-50);
+}
+
+.mini-calendar-day.selected {
+    background-color: var(--primary-500);
+    color: white;
+    font-weight: 500;
+}
+
+.mini-calendar-day.today:not(.selected) {
+    background-color: var(--primary-100);
+    color: var(--primary-800);
+}
+
+.mini-calendar-day.other-month {
+    color: #9CA3AF;
+}
+
+/* Dark mode mini calendar */
+.dark-mode .mini-calendar-day {
+    background-color: transparent;
+}
+
+.dark-mode .mini-calendar-day:hover:not(.selected):not(.today) {
+    background-color: #374151;
+}
+
+.dark-mode .mini-calendar-day.today:not(.selected) {
+    background-color: #4B5563;
+    color: white;
+}
+
+.dark-mode .mini-calendar-day.other-month {
+    color: #6B7280;
+}
+
+/* Sidebar styling */
+.calendar-sidebar {
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+    z-index: 10;
+}
+
+/* Header styling */
+.calendar-header {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    z-index: 20;
+}
+
+.dark-mode .calendar-header,
+.dark-mode .calendar-sidebar {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    z-index: 100;
+    background-color: #1F2937;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+    font-size: 0.75rem;
+    max-width: 200px;
+}
+
+.tooltip:after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #1F2937 transparent transparent transparent;
+}
+
+/* Modal animation */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-animation {
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Calendar grid styles */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.calendar-day {
+    min-height: 100px;
+    border: 1px solid #e5e7eb;
+    padding: 0.25rem;
+    transition: background-color 0.2s;
+}
+
+.calendar-day:hover {
+    background-color: #f9fafb;
+}
+
+.calendar-day.current-day {
+    background-color: var(--primary-50);
+}
+
+.calendar-day.weekend {
+    background-color: #f9fafb;
+}
+
+.calendar-day.other-month {
+    opacity: 0.6;
+}
+
+/* Create button styling */
+.create-button {
+    background-color: var(--primary-500);
+    color: white;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.create-button:hover {
+    background-color: var(--primary-600);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.create-button:active {
+    transform: translateY(0);
+}
+
+/* Checkbox styling */
+input[type="checkbox"] {
+    accent-color: var(--primary-500);
+}
+
+.dark-mode input[type="checkbox"] {
+    background-color: #4B5563;
+    border-color: #6B7280;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .hidden-mobile {
+        display: none;
+    }
+
+    .calendar-sidebar {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 20;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .calendar-sidebar.open {
+        transform: translateX(0);
+    }
+
+    .calendar-day {
+        min-height: 60px;
+    }
+
+    .week-date {
+        width: 28px;
+        height: 28px;
+        font-size: 0.875rem;
+    }
+}

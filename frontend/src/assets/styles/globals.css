@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-50: #fff7ed;
+  --primary-100: #ffedd5;
+  --primary-200: #fed7aa;
+  --primary-300: #fdba74;
+  --primary-400: #fb923c;
+  --primary-500: #f97316;
+  --primary-600: #ea580c;
+  --primary-700: #c2410c;
+  --primary-800: #9a3412;
+  --primary-900: #7c2d12;
+}
+
+/* Global styles */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Base element styling */
+button {
+  transition: all 0.2s ease;
+  background-color: transparent;
+  border: none;
+  color: inherit;
+}
+
+button:focus, input:focus, select:focus, textarea:focus {
+  outline: none;
+  @apply ring-offset-2 ring-2 ring-primary-500;
+}
+
+/* Fix dark mode button backgrounds */
+.dark-mode button:not([class*="bg-"]) {
+  background-color: transparent !important;
+}
+
+/* Fix calendar day styling */
+.mini-calendar-day,
+.dark-mode .mini-calendar-day {
+  background-color: transparent;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d1d5db;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #9ca3af;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background-color: #4b5563;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background-color: #6b7280;
+}
+
+/* Focus styles for accessibility */
+.focus-visible:focus {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+/* Better checkbox styling */
+input[type="checkbox"] {
+  accent-color: var(--primary-500);
+}
+
+.dark-mode input[type="checkbox"] {
+  background-color: #4B5563;
+  border-color: #6B7280;
+}
+
+/* Utility classes */
+.text-primary {
+  color: var(--primary-500);
+}
+
+.bg-primary {
+  background-color: var(--primary-500);
+}
+
+.border-primary {
+  border-color: var(--primary-500);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease;
+}
+
+/* Fix for ring styles */
+@layer utilities {
+  .ring-primary-500 {
+    --tw-ring-color: var(--primary-500);
+  }
+}
