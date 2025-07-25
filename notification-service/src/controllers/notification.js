@@ -1,329 +1,196 @@
-const Notification = require('../../models/notification');
-const NotificationTemplate = require('../../models/template');
-const NotificationPreference = require('../../models/preference');
-const logger = require('../../utils/logger');
-const queueService = require('../services/queueService');
-const emailHandler = require('./channels/email');
-const pushHandler = require('./channels/push');
-const smsHandler = require('./channels/sms');
-const inAppHandler = require('./channels/inApp');
+const notificationService = require('../services/notification');
+const logger = require('../utils/logger');
 
-/**
- * Process notification through various channels
- */
-async function processNotification(notification) {
-  try {
-    // Update notification status to SENT
-    notification.status = 'SENT';
-    notification.sentAt = new Date();
-    await notification.save();
+const getNotifications = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { limit, offset, read } = req.query;
+        const notifications = await notificationService.getNotifications(userId, { limit, offset, read });
+        res.json(notifications);
+    } catch (error) {
+        logger.error('Get notifications error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    const deliveryPromises = [];
-    const deliveryLogs = [];
-    const timestamp = new Date();
-
-    // Process each requested channel
-    for (const channel of notification.channel) {
-      try {
-        let result;
-        switch (channel) {
-          case 'EMAIL':
-            result = await emailHandler.send(notification);
-            break;
-          case 'PUSH':
-            result = await pushHandler.send(notification);
-            break;
-          case 'SMS':
-            result = await smsHandler.send(notification);
-            break;
-          case 'IN_APP':
-            result = await inAppHandler.send(notification);
-            break;
-          default:
-            logger.warn(`Unknown notification channel: ${channel}`);
-            continue;
+const markNotificationRead = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { id } = req.params;
+        const notification = await notificationService.markNotificationRead(userId, id);
+        if (!notification) {
+            return res.status(404).json({ error: 'Notification not found or not authorized' });
         }
-        deliveryLogs.push({
-          channel,
-          status: result.success ? 'DELIVERED' : 'FAILED',
-          timestamp,
-          details: result
-        });
-      } catch (error) {
-        logger.error(`Error sending notification through ${channel}: ${error.message}`);
-        deliveryLogs.push({
-          channel,
-          status: 'FAILED',
-          timestamp,
-          details: { error: error.message }
-        });
-      }
+        res.json(notification);
+    } catch (error) {
+        logger.error('Mark notification read error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Update notification with delivery results
-    notification.deliveryLogs = [...notification.deliveryLogs || [], ...deliveryLogs];
-
-    // Check if all deliveries were successful
-    const allSuccessful = deliveryLogs.every(log => log.status === 'DELIVERED');
-    const allFailed = deliveryLogs.every(log => log.status === 'FAILED');
-
-    if (allSuccessful) {
-      notification.status = 'DELIVERED';
-      notification.deliveredAt = new Date();
-    } else if (allFailed) {
-      notification.status = 'FAILED';
-      notification.lastError = 'All delivery channels failed';
-    } else {
-      notification.status = 'DELIVERED'; // Partial delivery still counts as delivered
-      notification.deliveredAt = new Date();
-    }
-
-    await notification.save();
-    return notification;
-  } catch (error) {
-    logger.error(`Error processing notification: ${error.message}`);
-    // Update notification status to FAILED
-    notification.status = 'FAILED';
-    notification.lastError = error.message;
-    await notification.save();
-    throw error;
-  }
-}
-
-/**
- * Create a notification from a template
- */
-async function createFromTemplate(templateName, userId, data = {}) {
-  try {
-    const template = await NotificationTemplate.findOne({ name: templateName });
-
-    if (!template) {
-      throw new Error(`Template not found: ${templateName}`);
-    }
-
-    // Get user preferences
-    const preference = await NotificationPreference.findOne({
-      userId,
-      type: template.type
-    });
-
-    // If notification type is disabled for this user, skip it
-    if (preference && !preference.enabled) {
-      logger.info(`Notification type ${template.type} is disabled for user ${userId}`);
-      return null;
-    }
-
-    // Determine notification channels based on preferences or template defaults
-    let channels = preference && preference.channels.length > 0
-      ? preference.channels
-      : template.defaultChannels;
-
-    // Check if we're in a quiet period for this user
-    let isQuietPeriod = false;
-    if (preference && preference.quiet && preference.quietStartTime && preference.quietEndTime) {
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-      // Simple time string comparison (assumes same day)
-      if (preference.quietStartTime <= currentTime && currentTime <= preference.quietEndTime) {
-        isQuietPeriod = true;
-
-        // During quiet period, only deliver via IN_APP channel
-        if (!channels.includes('IN_APP')) {
-          channels.push('IN_APP');
+const deleteNotification = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { id } = req.params;
+        const result = await notificationService.deleteNotification(userId, id);
+        if (!result) {
+            return res.status(404).json({ error: 'Notification not found or not authorized' });
         }
-
-        // Filter out other channels except IN_APP
-        channels = channels.filter(channel => channel === 'IN_APP');
-      }
+        res.json(result);
+    } catch (error) {
+        logger.error('Delete notification error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Process template variables
-    let title = template.titleTemplate;
-    let message = template.messageTemplate;
-
-    // Replace template variables with actual data
-    Object.entries(data).forEach(([key, value]) => {
-      const regex = new RegExp(`{{${key}}}`, 'g');
-      title = title.replace(regex, value);
-      message = message.replace(regex, value);
-    });
-
-    // Create the notification
-    const notification = new Notification({
-      userId,
-      type: template.type,
-      title,
-      message,
-      channel: channels,
-      priority: template.defaultPriority,
-      metadata: { templateName, templateData: data, isQuietPeriod }
-    });
-
-    await notification.save();
-    return notification;
-  } catch (error) {
-    logger.error(`Error creating notification from template: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Send an immediate notification
- */
-async function sendNotification(params) {
-  try {
-    const { userId, type, title, message, channels, priority, metadata } = params;
-
-    // Check user preferences
-    const preference = await NotificationPreference.findOne({ userId, type });
-
-    // If notification type is disabled for this user, skip it
-    if (preference && !preference.enabled) {
-      logger.info(`Notification type ${type} is disabled for user ${userId}`);
-      return null;
+const createNotification = async (req, res) => {
+    try {
+        const notification = await notificationService.createNotification(req.body);
+        res.status(201).json(notification);
+    } catch (error) {
+        logger.error('Create notification error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Apply channels from preferences if available
-    const finalChannels = preference && preference.channels.length > 0
-      ? preference.channels
-      : channels;
-
-    // Create notification
-    const notification = new Notification({
-      userId,
-      type,
-      title,
-      message,
-      channel: finalChannels,
-      priority: priority || 'MEDIUM',
-      metadata: metadata || {}
-    });
-
-    await notification.save();
-
-    // Add to queue for processing
-    await queueService.addToQueue(notification._id);
-
-    return notification;
-  } catch (error) {
-    logger.error(`Error sending notification: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Schedule a notification for future delivery
- */
-async function scheduleNotification(params) {
-  try {
-    const { userId, type, title, message, channels, scheduledFor, priority, metadata } = params;
-
-    // Validate scheduled time is in the future
-    const scheduledTime = new Date(scheduledFor);
-    const now = new Date();
-
-    if (scheduledTime <= now) {
-      throw new Error('Scheduled time must be in the future');
+const getNotificationCounts = async (req, res) => {
+    console.log('getNotificationCounts hit!');
+    try {
+        const userId = req.user.userId;
+        const counts = await notificationService.getNotificationCounts(userId);
+        res.json(counts);
+    } catch (error) {
+        logger.error('Get notification counts error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Check user preferences
-    const preference = await NotificationPreference.findOne({ userId, type });
-
-    // If notification type is disabled for this user, skip it
-    if (preference && !preference.enabled) {
-      logger.info(`Notification type ${type} is disabled for user ${userId}`);
-      return null;
+const markAllNotificationsAsRead = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const result = await notificationService.markAllNotificationsAsRead(userId);
+        res.json({ message: `Marked ${result} notifications as read` });
+    } catch (error) {
+        logger.error('Mark all notifications as read error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Apply channels from preferences if available
-    const finalChannels = preference && preference.channels.length > 0
-      ? preference.channels
-      : channels;
-
-    // Create notification
-    const notification = new Notification({
-      userId,
-      type,
-      title,
-      message,
-      channel: finalChannels,
-      priority: priority || 'MEDIUM',
-      scheduledFor: scheduledTime,
-      metadata: metadata || {}
-    });
-
-    await notification.save();
-
-    // Schedule in the queue system
-    await queueService.scheduleInQueue(notification._id, scheduledTime);
-
-    return notification;
-  } catch (error) {
-    logger.error(`Error scheduling notification: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Cancel a scheduled notification
- */
-async function cancelNotification(notificationId) {
-  try {
-    const notification = await Notification.findById(notificationId);
-
-    if (!notification) {
-      throw new Error('Notification not found');
+const cancelNotificationById = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { id } = req.params;
+        const result = await notificationService.cancelNotificationById(id, userId);
+        res.json(result);
+    } catch (error) {
+        logger.error('Cancel notification error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Can only cancel pending notifications
-    if (notification.status !== 'PENDING') {
-      throw new Error(`Cannot cancel notification with status: ${notification.status}`);
+const getPreferences = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const preferences = await notificationService.getPreferences(userId);
+        res.json(preferences);
+    } catch (error) {
+        logger.error('Get preferences error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+};
 
-    // Update status to canceled
-    notification.status = 'CANCELED';
-    await notification.save();
+const updatePreference = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { type } = req.params;
+        const updatedPreference = await notificationService.updatePreference(userId, type, req.body);
+        res.json(updatedPreference);
+    } catch (error) {
+        logger.error('Update preference error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    // Remove from queue
-    await queueService.removeFromQueue(notificationId);
+const handleDeliveryStatus = async (req, res) => {
+    try {
+        const { provider, externalId } = req.params;
+        const { status, details } = req.body;
+        const result = await notificationService.handleDeliveryStatus(provider, externalId, status, details);
+        res.json(result);
+    } catch (error) {
+        logger.error('Handle delivery status error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    return true;
-  } catch (error) {
-    logger.error(`Error canceling notification: ${error.message}`);
-    throw error;
-  }
-}
+const getTemplates = async (req, res) => {
+    try {
+        const templates = await notificationService.getTemplates();
+        res.json(templates);
+    } catch (error) {
+        logger.error('Get templates error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-/**
- * Get notifications by user ID with filtering
- */
-async function getNotificationsByUser(userId, filters = {}) {
-  try {
-    const { status, type, read, limit = 10, offset = 0, sortBy = 'createdAt', sortOrder = 'DESC' } = filters;
+const createTemplate = async (req, res) => {
+    try {
+        const template = await notificationService.createTemplate(req.body);
+        res.status(201).json(template);
+    } catch (error) {
+        logger.error('Create template error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    const query = { userId };
-    if (status) query.status = status;
-    if (type) query.type = type;
-    if (read !== undefined) query.readAt = read ? { $ne: null } : null;
+const updateTemplate = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updatedTemplate = await notificationService.updateTemplate(id, req.body);
+        if (!updatedTemplate) {
+            return res.status(404).json({ error: 'Template not found' });
+        }
+        res.json(updatedTemplate);
+    } catch (error) {
+        logger.error('Update template error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    const notifications = await Notification.find(query)
-      .sort({ [sortBy]: sortOrder === 'DESC' ? -1 : 1 })
-      .skip(offset)
-      .limit(limit);
+const getStats = async (req, res) => {
+    try {
+        const stats = await notificationService.getStats();
+        res.json(stats);
+    } catch (error) {
+        logger.error('Get stats error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
-    return notifications;
-  } catch (error) {
-    logger.error(`Error fetching notifications: ${error.message}`);
-    throw error;
-  }
-}
+const getQueueStats = async (req, res) => {
+    try {
+        const stats = await notificationService.getQueueStats();
+        res.json(stats);
+    } catch (error) {
+        logger.error('Get queue stats error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
 
 module.exports = {
-  processNotification,
-  createFromTemplate,
-  sendNotification,
-  scheduleNotification,
-  cancelNotification,
-  getNotificationsByUser
+    getNotifications,
+    markNotificationRead,
+    deleteNotification,
+    createNotification,
+    getNotificationCounts,
+    markAllNotificationsAsRead,
+    cancelNotificationById,
+    getPreferences,
+    updatePreference,
+    handleDeliveryStatus,
+    getTemplates,
+    createTemplate,
+    updateTemplate,
+    getStats,
+    getQueueStats
 };

@@ -8,7 +8,7 @@ const deliveryTracker = require('../../services/deliveryTracker');
 const queueService = require('../../services/queueService');
 const authMiddleware = require('../middleware/auth');
 const validationMiddleware = require('../middleware/validation');
-const logger = require('../../utils/logger');
+const logger = require('@utils/logger');
 
 // Get all notifications for the current user
 router.get(
@@ -91,50 +91,7 @@ router.get(
 router.get(
   '/count',
   authMiddleware.authenticate,
-  async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const now = new Date();
-
-      // Count unread notifications
-      const unread = await Notification.countDocuments({
-        userId,
-        readAt: null
-      });
-
-      // Count today's notifications
-      const startOfDay = new Date(now);
-      startOfDay.setHours(0, 0, 0, 0);
-      const today = await Notification.countDocuments({
-        userId,
-        createdAt: { $gte: startOfDay }
-      });
-
-      // Count this week's notifications
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
-      const thisWeek = await Notification.countDocuments({
-        userId,
-        createdAt: { $gte: startOfWeek }
-      });
-
-      res.json({
-        success: true,
-        data: {
-          unread,
-          today,
-          thisWeek
-        }
-      });
-    } catch (error) {
-      logger.error(`Error fetching notification count: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to fetch notification count'
-      });
-    }
-  }
+  notificationController.getNotificationCounts
 );
 
 // Send a notification
