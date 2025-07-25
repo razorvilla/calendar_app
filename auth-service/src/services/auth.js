@@ -89,7 +89,6 @@ const register = async (userData) => {
 
     const user = userResult.rows[0];
 
-    // Check for account lockout
     if (user.lockout_until && new Date(user.lockout_until) > new Date()) {
         const remainingTime = Math.ceil((new Date(user.lockout_until).getTime() - new Date().getTime()) / (1000 * 60));
         throw new Error(`Account locked. Please try again in ${remainingTime} minutes.`);
@@ -98,12 +97,11 @@ const register = async (userData) => {
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
-        // Increment failed login attempts
-        const newAttempts = user.failed_login_attempts + 1;
+        const newAttempts = (user.failed_login_attempts || 0) + 1;
         let lockoutUntil = null;
 
-        if (newAttempts >= 5) { // Lock after 5 failed attempts
-            lockoutUntil = new Date(Date.now() + 15 * 60 * 1000); // Lock for 15 minutes
+        if (newAttempts >= 5) { 
+            lockoutUntil = new Date(Date.now() + 15 * 60 * 1000);
             await pool.query(
                 'UPDATE users SET failed_login_attempts = $1, lockout_until = $2 WHERE id = $3',
                 [newAttempts, lockoutUntil, user.id]
@@ -118,13 +116,11 @@ const register = async (userData) => {
         }
     }
 
-    // Reset failed login attempts and lockout on successful login
     await pool.query(
         'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL WHERE id = $1',
         [user.id]
     );
 
-    // MFA Check
     if (user.mfa_enabled) {
         if (!mfaToken) {
             return { requiresMfa: true, userId: user.id };
@@ -147,7 +143,6 @@ const register = async (userData) => {
         { expiresIn: '15m' }
     );
 
-    // Invalidate any existing refresh tokens for the user on new login
     await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [user.id]);
 
     const refreshToken = jwt.sign(
@@ -161,12 +156,7 @@ const register = async (userData) => {
         [uuidv4(), user.id, refreshToken]
     );
 
-    res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-    });
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' });
 
     return {
         accessToken,
@@ -178,7 +168,7 @@ const register = async (userData) => {
     };
 };
 
-const refreshToken = async (token) => {
+const refreshToken = async (token, res) => {
     if (!token) {
         throw new Error('Refresh token required');
     }
@@ -195,7 +185,6 @@ const refreshToken = async (token) => {
             throw new Error('Invalid refresh token');
         }
 
-        // Invalidate the used refresh token
         await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [tokenResult.rows[0].id]);
 
         const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [payload.userId]);
@@ -222,12 +211,7 @@ const refreshToken = async (token) => {
             [uuidv4(), user.id, newRefreshToken]
         );
 
-        res.cookie('refreshToken', newRefreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-        });
+        res.cookie('refreshToken', newRefreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict' });
 
         return { accessToken };
     } catch (error) {
@@ -490,7 +474,14 @@ const getPreferences = async (userId) => {
         };
     }
 
-    return prefsResult.rows[0];
+    const preferences = prefsResult.rows[0];
+    if (preferences.working_hours && typeof preferences.working_hours === 'string') {
+        preferences.working_hours = JSON.parse(preferences.working_hours);
+    }
+    if (preferences.notification_settings && typeof preferences.notification_settings === 'string') {
+        preferences.notification_settings = JSON.parse(preferences.notification_settings);
+    }
+    return preferences;
 };
 
 const updatePreferences = async (userId, preferencesData) => {
@@ -504,38 +495,51 @@ const updatePreferences = async (userId, preferencesData) => {
     let query, values;
 
     if (checkResult.rows.length === 0) {
-        query = `\n            INSERT INTO user_preferences (\n                id, user_id, default_calendar_id, default_view, working_hours, notification_settings, created_at\n            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())\n            RETURNING *\n        `;
+        query = `
+            INSERT INTO user_preferences (
+                id, user_id, default_calendar_id, default_view, working_hours, notification_settings, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            RETURNING *
+        `;
 
         values = [
             uuidv4(),
             userId,
             default_calendar_id,
             default_view || 'month',
-            working_hours ? JSON.stringify(working_hours) : JSON.stringify({
-                start: '09:00',
-                end: '17:00',
-                days: [1, 2, 3, 4, 5]
-            }),
-            notification_settings ? JSON.stringify(notification_settings) : JSON.stringify({
-                event_reminders: true,
-                share_notifications: true,
-                email_notifications: true
-            })
+            working_hours,
+            notification_settings
         ];
     } else {
-        query = `\n            UPDATE user_preferences SET\n                default_calendar_id = COALESCE($1, default_calendar_id),\n                default_view = COALESCE($2, default_view),\n                working_hours = COALESCE($3, working_hours),\n                notification_settings = COALESCE($4, notification_settings),\n                updated_at = NOW()\n            WHERE user_id = $5\n            RETURNING *\n        `;
+        query = `
+            UPDATE user_preferences SET
+                default_calendar_id = COALESCE($1, default_calendar_id),
+                default_view = COALESCE($2, default_view),
+                working_hours = COALESCE($3, working_hours),
+                notification_settings = COALESCE($4, notification_settings),
+                updated_at = NOW()
+            WHERE user_id = $5
+            RETURNING *
+        `;
 
         values = [
             default_calendar_id,
             default_view,
-            working_hours ? JSON.stringify(working_hours) : null,
-            notification_settings ? JSON.stringify(notification_settings) : null,
+            working_hours,
+            notification_settings,
             userId
         ];
     }
 
     const result = await pool.query(query, values);
-    return result.rows[0];
+    const preferences = result.rows[0];
+    if (preferences.working_hours && typeof preferences.working_hours === 'string') {
+        preferences.working_hours = JSON.parse(preferences.working_hours);
+    }
+    if (preferences.notification_settings && typeof preferences.notification_settings === 'string') {
+        preferences.notification_settings = JSON.parse(preferences.notification_settings);
+    }
+    return preferences;
 };
 
 const generateMfaSecret = async (userId) => {

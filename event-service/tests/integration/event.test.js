@@ -1,8 +1,9 @@
+require('../setup');
 const request = require('supertest');
-const createServer = require('../../src/index');
-const app = createServer();
+const app = require('../../src/index');
 const pool = require('../../src/db/pool');
 const jwt = require('jsonwebtoken');
+
 
 jest.mock('../../src/db/pool');
 
@@ -13,6 +14,8 @@ describe('Event API Integration Tests', () => {
     beforeAll(() => {
         process.env.JWT_SECRET = 'test_jwt_secret';
         accessToken = jwt.sign({ userId: userId }, process.env.JWT_SECRET);
+        jwt.verify.mockReturnValue({ userId: userId });
+        
     });
 
     beforeEach(() => {
@@ -37,7 +40,7 @@ describe('Event API Integration Tests', () => {
             release: jest.fn()
         });
 
-        const res = await request(createServer())
+        const res = await request(app)
             .post('/events')
             .set('Authorization', `Bearer ${accessToken}`)
             .send({
@@ -58,7 +61,7 @@ describe('Event API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'event1', title: 'Test Event', recurrence_rule: null }] }); // Non-recurring events
         pool.query.mockResolvedValueOnce({ rows: [] }); // Recurring events
 
-        const res = await request(createServer())
+        const res = await request(app)
             .get('/events?start=2024-01-01T00:00:00Z&end=2024-01-31T23:59:59Z')
             .set('Authorization', `Bearer ${accessToken}`);
 
@@ -72,7 +75,7 @@ describe('Event API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [] }); // Reminders
         pool.query.mockResolvedValueOnce({ rows: [] }); // Attendees
 
-        const res = await request(createServer())
+        const res = await request(app)
             .get('/events/event1')
             .set('Authorization', `Bearer ${accessToken}`);
 
@@ -85,7 +88,7 @@ describe('Event API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'event1', title: 'Updated Event', calendar_id: 'cal1' }] }); // Update event
         pool.query.mockResolvedValueOnce({ rows: [{ name: 'Calendar 1', color: 'blue' }] }); // Calendar info
 
-        const res = await request(createServer())
+        const res = await request(app)
             .patch('/events/event1')
             .set('Authorization', `Bearer ${accessToken}`)
             .send({ title: 'Updated Event' });
@@ -101,7 +104,7 @@ describe('Event API Integration Tests', () => {
             release: jest.fn()
         });
 
-        const res = await request(createServer())
+        const res = await request(app)
             .delete('/events/event1')
             .set('Authorization', `Bearer ${accessToken}`);
 

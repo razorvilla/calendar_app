@@ -1,5 +1,5 @@
 const twilio = require('twilio');
-const logger = require('../../../utils/logger');
+const logger = require('@utils/logger');
 
 // In a production environment, this would be properly configured
 // with real Twilio settings

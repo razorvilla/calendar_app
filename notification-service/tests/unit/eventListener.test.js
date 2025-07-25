@@ -1,13 +1,24 @@
-const eventListener = require('../../src/services/eventListener');
+
+const eventListener = require('@services/eventListener');
 const { Kafka } = require('kafkajs');
-const notificationController = require('../../src/controllers/notification');
-const logger = require('../../src/utils/logger');
-const queueService = require('../../src/services/queueService');
+const notificationService = require('@services/notification');
+const logger = require('@utils/logger');
+const queueService = require('@services/queueService');
 
 jest.mock('kafkajs');
-jest.mock('../../src/controllers/notification');
-jest.mock('../../src/utils/logger');
-jest.mock('../../src/services/queueService');
+jest.mock('@services/notification', () => ({
+  createFromTemplate: jest.fn((templateName, userId, data) => {
+    // Simulate creating a notification object with a save method
+    return {
+      _id: 'mockNotifId', // or 'notif1', 'notif2' based on test case
+      scheduledFor: data.reminderTime ? new Date(data.reminderTime) : undefined,
+      save: jest.fn().mockResolvedValue(true), // Mock the save method
+    };
+  }),
+  scheduleNotification: jest.fn(),
+}));
+jest.mock('@utils/logger');
+jest.mock('@services/queueService');
 
 describe('Event Listener Service', () => {
     let mockConsumer;
@@ -28,6 +39,10 @@ describe('Event Listener Service', () => {
         Kafka.mockImplementation(() => ({
             consumer: jest.fn(() => mockConsumer),
         }));
+
+        // Define the mocked methods for notificationService
+        notificationService.createFromTemplate.mockResolvedValue({ _id: 'notif1', save: jest.fn().mockResolvedValue(true) });
+        notificationService.scheduleNotification.mockResolvedValue({ _id: 'mockScheduledNotifId' });
     });
 
     describe('initialize', () => {
@@ -70,11 +85,11 @@ describe('Event Listener Service', () => {
     describe('processEvent', () => {
         it('should process an event and add to immediate queue', async () => {
             const payload = { eventType: 'event.created', data: { creatorId: 'user1' } };
-            notificationController.createFromTemplate.mockResolvedValue({ _id: 'notif1' });
+            notificationService.createFromTemplate.mockResolvedValue({ _id: 'notif1', save: jest.fn().mockResolvedValue(true) });
 
             const result = await eventListener.processEvent(payload);
 
-            expect(notificationController.createFromTemplate).toHaveBeenCalledWith('event_created', 'user1', payload.data);
+            expect(notificationService.createFromTemplate).toHaveBeenCalledWith('event_created', 'user1', payload.data);
             expect(queueService.addToQueue).toHaveBeenCalledWith('notif1');
             expect(logger.info).toHaveBeenCalledWith('Created notification notif1 for event event.created');
             expect(result).toBe(true);
@@ -83,11 +98,11 @@ describe('Event Listener Service', () => {
         it('should process an event and schedule it', async () => {
             const scheduledTime = new Date(Date.now() + 3600000);
             const payload = { eventType: 'event.reminder', data: { userId: 'user1', reminderTime: scheduledTime.toISOString() } };
-            notificationController.createFromTemplate.mockResolvedValue({ _id: 'notif2', scheduledFor: scheduledTime });
+            notificationService.createFromTemplate.mockResolvedValue({ _id: 'notif2', scheduledFor: scheduledTime, save: jest.fn().mockResolvedValue(true) });
 
             const result = await eventListener.processEvent(payload);
 
-            expect(notificationController.createFromTemplate).toHaveBeenCalledWith('event_reminder', 'user1', payload.data);
+            expect(notificationService.createFromTemplate).toHaveBeenCalledWith('event_reminder', 'user1', payload.data);
             expect(queueService.scheduleInQueue).toHaveBeenCalledWith('notif2', expect.any(Date));
             expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Created notification notif2 for event event.reminder'));
             expect(result).toBe(true);
@@ -95,39 +110,40 @@ describe('Event Listener Service', () => {
 
         it('should log warning if no template mapping found', async () => {
             const payload = { eventType: 'unknown.event', data: {} };
+            notificationService.createFromTemplate.mockResolvedValue(null); // Ensure it returns null for unknown events
 
             const result = await eventListener.processEvent(payload);
 
-            expect(notificationController.createFromTemplate).not.toHaveBeenCalled();
+            expect(notificationService.createFromTemplate).not.toHaveBeenCalled();
             expect(logger.warn).toHaveBeenCalledWith('No template mapping found for event type: unknown.event');
             expect(result).toBe(false);
         });
 
         it('should log warning if no user ID found', async () => {
             const payload = { eventType: 'event.created', data: {} }; // Missing creatorId
-            notificationController.createFromTemplate.mockResolvedValue({ _id: 'notif3' });
+            notificationService.createFromTemplate.mockResolvedValue(null); // Ensure it returns null
 
             const result = await eventListener.processEvent(payload);
 
             expect(logger.warn).toHaveBeenCalledWith('No user ID found in event data for: event.created');
-            expect(notificationController.createFromTemplate).not.toHaveBeenCalled();
+            expect(notificationService.createFromTemplate).not.toHaveBeenCalled();
             expect(result).toBe(false);
         });
 
         it('should log warning if notification creation from template fails', async () => {
             const payload = { eventType: 'event.created', data: { creatorId: 'user1' } };
-            notificationController.createFromTemplate.mockResolvedValue(null);
+            notificationService.createFromTemplate.mockResolvedValue(null);
 
             const result = await eventListener.processEvent(payload);
 
-            expect(notificationController.createFromTemplate).toHaveBeenCalledTimes(1);
+            expect(notificationService.createFromTemplate).toHaveBeenCalledTimes(1);
             expect(logger.warn).toHaveBeenCalledWith('Failed to create notification for event: event.created');
             expect(result).toBe(false);
         });
 
         it('should log error if processing event throws an error', async () => {
             const payload = { eventType: 'event.created', data: { creatorId: 'user1' } };
-            notificationController.createFromTemplate.mockRejectedValue(new Error('DB error'));
+            notificationService.createFromTemplate.mockRejectedValue(new Error('DB error'));
 
             const result = await eventListener.processEvent(payload);
 

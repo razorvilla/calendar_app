@@ -1,8 +1,8 @@
-const queueService = require('../../src/services/queueService');
+const queueService = require('@services/queueService');
 const Bull = require('bull');
-const Notification = require('../../src/models/notification');
-const notificationController = require('../../src/controllers/notification');
-const logger = require('../../src/utils/logger');
+const Notification = require('@models/notification');
+const notificationController = require('@controllers/notification');
+const logger = require('@utils/logger');
 
 jest.mock('bull');
 jest.mock('../../src/models/notification');

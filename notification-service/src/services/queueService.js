@@ -1,7 +1,7 @@
 const Bull = require('bull');
-const Notification = require('../../models/notification');
-const notificationController = require('../../controllers/notification');
-const logger = require('../../utils/logger');
+const Notification = require('@models/notification');
+const notificationController = require('@controllers/notification');
+const logger = require('@utils/logger');
 
 // Create queue instances
 let notificationQueue;

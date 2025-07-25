@@ -13,10 +13,7 @@ const config = {
   // Database
   mongodb: {
     uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/notification-service',
-    options: {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    },
+    options: {},
   },
 
   // Redis

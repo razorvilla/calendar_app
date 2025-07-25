@@ -90,7 +90,7 @@ const typeDefs = gql`
     startTime: DateTime!
     endTime: DateTime!
     isAllDay: Boolean!
-    recurrenceRule: String
+    recurrenceRule: RecurrenceRule
     exceptionDates: [DateTime]
     color: String
     visibility: Visibility!
@@ -103,6 +103,31 @@ const typeDefs = gql`
     createdAt: DateTime!
     updatedAt: DateTime
     version: Int!
+  }
+
+  enum RecurrenceFrequency {
+    DAILY
+    WEEKLY
+    MONTHLY
+    YEARLY
+  }
+
+  enum Weekday {
+    SU
+    MO
+    TU
+    WE
+    TH
+    FR
+    SA
+  }
+
+  type RecurrenceRule {
+    frequency: RecurrenceFrequency!
+    interval: Int
+    count: Int
+    until: DateTime
+    byDay: [Weekday!]
   }
 
   enum Visibility {
@@ -251,6 +276,14 @@ const typeDefs = gql`
     permission: Permission!
   }
 
+  input RecurrenceRuleInput {
+    frequency: RecurrenceFrequency!
+    interval: Int
+    count: Int
+    until: DateTime
+    byDay: [Weekday!]
+  }
+
   input CreateEventInput {
     calendarId: ID!
     title: String!
@@ -259,7 +292,7 @@ const typeDefs = gql`
     startTime: DateTime!
     endTime: DateTime!
     isAllDay: Boolean
-    recurrenceRule: String
+    recurrenceRule: RecurrenceRuleInput
     color: String
     visibility: Visibility
     reminderMinutes: Int
@@ -273,7 +306,7 @@ const typeDefs = gql`
     startTime: DateTime
     endTime: DateTime
     isAllDay: Boolean
-    recurrenceRule: String
+    recurrenceRule: RecurrenceRuleInput
     color: String
     visibility: Visibility
     status: EventStatus

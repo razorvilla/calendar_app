@@ -2,7 +2,7 @@ const Notification = require('../../models/notification');
 const NotificationTemplate = require('../../models/template');
 const NotificationPreference = require('../../models/preference');
 const notificationController = require('../../controllers/notification');
-const logger = require('../../utils/logger');
+const logger = require('@utils/logger');
 
 const resolvers = {
   Query: {

@@ -49,7 +49,7 @@ describe('Calendar Share API Integration Tests', () => {
         // Mock share check (no existing share)
         pool.query.mockResolvedValueOnce({ rows: [] });
         // Mock insert share
-        const mockShare = { id: 'share-id-1', calendar_id: calendarId, user_id: user2Id, email: 'user2@example.com', permission: 'view', status: 'accepted', invite_token: 'token123' };
+        const mockShare = { id: 'share-id-1', calendar_id: calendarId, user_id: user2Id, email: 'user2@example.com', permission: 'view', status: 'pending', invite_token: 'token123' };
         pool.query.mockResolvedValueOnce({ rows: [mockShare] });
 
         const res = await request(app)
@@ -69,9 +69,11 @@ describe('Calendar Share API Integration Tests', () => {
 
     it('should allow the invited user to accept the share invitation', async () => {
         // Mock token check
-        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, invite_token: inviteToken, status: 'pending' }] });
+        const mockSharePending = { id: shareId, invite_token: inviteToken, status: 'pending', calendar_id: calendarId, user_id: user2Id, email: 'user2@example.com', permission: 'view' };
+        pool.query.mockResolvedValueOnce({ rows: [mockSharePending] });
         // Mock update share status
-        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, status: 'accepted' }] });
+        const mockShareAccepted = { ...mockSharePending, status: 'accepted' };
+        pool.query.mockResolvedValueOnce({ rows: [mockShareAccepted] });
 
         const res = await request(app)
             .get(`/calendars/share/accept/${inviteToken}`);
@@ -85,7 +87,7 @@ describe('Calendar Share API Integration Tests', () => {
         // Mock calendar ownership check
         pool.query.mockResolvedValueOnce({ rows: [{ id: calendarId, owner_id: user1Id }] });
         // Mock get all shares
-        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, email: 'user2@example.com' }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, email: 'user2@example.com', permission: 'view' }] });
 
         const res = await request(app)
             .get(`/calendars/${calendarId}/shares`)
@@ -94,15 +96,16 @@ describe('Calendar Share API Integration Tests', () => {
         expect(res.statusCode).toEqual(200);
         expect(res.body.length).toBeGreaterThan(0);
         expect(res.body[0].email).toEqual('user2@example.com');
+        expect(res.body[0].permission).toEqual('view');
     });
 
     it('should allow owner to update a calendar share', async () => {
         // Mock calendar ownership check
         pool.query.mockResolvedValueOnce({ rows: [{ id: calendarId, owner_id: user1Id }] });
         // Mock share check
-        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, calendar_id: calendarId, user_id: user2Id }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, calendar_id: calendarId, user_id: user2Id, email: 'user2@example.com', permission: 'view' }] });
         // Mock update share
-        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, permission: 'edit' }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ id: shareId, permission: 'edit', email: 'user2@example.com' }] });
 
         const res = await request(app)
             .patch(`/calendars/${calendarId}/shares/${shareId}`)
@@ -113,6 +116,7 @@ describe('Calendar Share API Integration Tests', () => {
 
         expect(res.statusCode).toEqual(200);
         expect(res.body.permission).toEqual('edit');
+        expect(res.body.email).toEqual('user2@example.com');
     });
 
     it('should allow owner to delete a calendar share', async () => {
@@ -135,10 +139,11 @@ describe('Calendar Share API Integration Tests', () => {
         // Mock calendar ownership check
         pool.query.mockResolvedValueOnce({ rows: [{ id: calendarId, owner_id: user1Id, name: "User1's Calendar" }] });
         // Mock share check (pending invitation)
-        pool.query.mockResolvedValueOnce({ rows: [{ id: 'new-share-id', calendar_id: calendarId, email: 'user2@example.com', status: 'pending', invite_token: 'newtoken123' }] });
+        const mockSharePending = { id: 'new-share-id', calendar_id: calendarId, email: 'user2@example.com', status: 'pending', invite_token: 'newtoken123' };
+        pool.query.mockResolvedValueOnce({ rows: [mockSharePending] });
 
         const res = await request(app)
-            .post(`/calendars/${calendarId}/shares/new-share-id/resend`)
+            .post(`/calendars/${calendarId}/shares/${mockSharePending.id}/resend`)
             .set('Authorization', `Bearer ${user1Token}`);
 
         expect(res.statusCode).toEqual(200);

@@ -1,6 +1,7 @@
 const { Kafka } = require('kafkajs');
-const notificationController = require('../controllers/notification');
-const logger = require('../utils/logger');
+const notificationService = require('./notification');
+const logger = require('@utils/logger');
+const queueService = require('./queueService');
 
 // Kafka consumer instance
 let consumer;
@@ -96,11 +97,13 @@ async function processEvent(payload) {
     }
 
     // Create notification from template
-    const notification = await notificationController.createFromTemplate(
+    const notification = await notificationService.createFromTemplate(
       templateName,
       userId,
       data
     );
+
+    console.log('Notification object after createFromTemplate:', notification);
 
     if (!notification) {
       logger.warn(`Failed to create notification for event: ${eventType}`);
@@ -113,11 +116,14 @@ async function processEvent(payload) {
       const scheduledTime = calculateScheduleTime(eventType, data);
       if (scheduledTime) {
         notification.scheduledFor = scheduledTime;
+        console.log('Attempting to save notification:', notification);
         await notification.save();
+        console.log('Notification saved. Attempting to schedule in queue:', notification._id, scheduledTime);
         await queueService.scheduleInQueue(notification._id, scheduledTime);
       }
     } else {
       // For immediate notifications, add to processing queue
+      console.log('Attempting to add to immediate queue:', notification._id);
       await queueService.addToQueue(notification._id);
     }
 

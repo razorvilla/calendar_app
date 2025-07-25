@@ -308,6 +308,8 @@ function updateNotificationStatus(notification, channel, status) {
       notification.deliveredAt = new Date();
     }
   } else if (status === 'FAILED') {
+    // Update last error
+    notification.lastError = `Delivery failed for ${channel}`;
     // Check if all channels have failed
     const allChannelsFailed = areAllChannelsFailed(notification);
     if (allChannelsFailed) {

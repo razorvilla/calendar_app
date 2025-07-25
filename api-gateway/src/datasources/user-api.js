@@ -1,32 +1,71 @@
-const { RESTDataSource } = require('apollo-datasource-rest');
+const axios = require('axios');
 
-class UserAPI extends RESTDataSource {
-  constructor() {
-    super();
-    this.baseURL = process.env.USER_SERVICE_URL || 'http://localhost:3002';
-  }
+class UserAPI {
+    constructor() {
+        this.baseURL = process.env.USER_SERVICE_URL;
+        this.client = axios.create({
+            baseURL: this.baseURL,
+        });
+    }
 
-  async getUser(id, token, userId) {
-    return this.get(`users/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    _setAuthHeader(token) {
+        return {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        };
+    }
 
-  async getCurrentUser(token, userId) {
-    return this.get('users/me', undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getCurrentUser(token) {
+        try {
+            const response = await this.client.get('/users/me', this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching current user:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async updateUser(input, token, userId) {
-    return this.put('users/me', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getUser(userId, token) {
+        try {
+            if (!userId) return null;
+            const response = await this.client.get(`/users/${userId}`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching user ${userId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
 
-  async getUserPreferences(id, token, userId) {
-    return this.get(`users/${id}/preferences`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getUserPreferences(userId, token) {
+        try {
+            const response = await this.client.get(`/users/${userId}/preferences`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching preferences for user ${userId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
 
-  async updatePreferences(input, token, userId) {
-    return this.put('users/me/preferences', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async updateUser(input, token) {
+        try {
+            const response = await this.client.patch('/users/me', input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error updating user:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  
+    async updatePreferences(input, token) {
+        try {
+            const response = await this.client.patch('/users/preferences', input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error updating preferences:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 }
 
 module.exports = UserAPI;

@@ -1,21 +1,10 @@
 const jwt = require('jsonwebtoken');
-
-/**
- * Middleware to authenticate JWT token
- *
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- */
 const authenticate = (req, res, next) => {
     const authHeader = req.headers.authorization;
-
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Authentication required' });
     }
-
     const token = authHeader.split(' ')[1];
-
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
@@ -31,7 +20,6 @@ const authenticate = (req, res, next) => {
         return res.status(500).json({ error: 'Internal server error' });
     }
 };
-
 module.exports = {
     authenticate
 };

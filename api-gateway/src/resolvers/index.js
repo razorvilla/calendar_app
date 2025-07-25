@@ -1,147 +1,115 @@
-// GraphQL resolvers
-const taskResolvers = require('./taskResolvers');
-const appointmentScheduleResolvers = require('./appointmentScheduleResolvers');
+console.log('API Gateway: Resolvers file is being accessed.');
 
 const resolvers = {
     Query: {
-        ...taskResolvers.Query,
-        ...appointmentScheduleResolvers.Query,
-        me: async (_, __, { dataSources, token, userId }) => {
+        me: async (_, __, { dataSources, token }) => {
             if (!token) return null;
-            return dataSources.userAPI.getCurrentUser(token, userId);
+            return dataSources.userAPI.getCurrentUser(token);
         },
-        calendar: async (_, { id }, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.getCalendar(id, token, userId);
+        calendar: async (_, { id }, { dataSources, token }) => {
+            return dataSources.calendarAPI.getCalendar(id, token);
         },
-        calendars: async (_, __, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.getCalendars(token, userId);
+        calendars: async (_, __, { dataSources, token }) => {
+            return dataSources.calendarAPI.getCalendars(token);
         },
-        event: async (_, { id }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.getEvent(id, token, userId);
+        event: async (_, { id }, { dataSources, token }) => {
+            return dataSources.eventAPI.getEvent(id, token);
         },
-        events: async (_, { calendarIds, start, end }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.getEvents(calendarIds, start, end, token, userId);
+        events: async (_, { calendarIds, start, end }, { dataSources, token }) => {
+            return dataSources.eventAPI.getEvents(calendarIds, start, end, token);
         },
     },
 
     Mutation: {
-        ...taskResolvers.Mutation,
-        ...appointmentScheduleResolvers.Mutation,
-
-        // Auth mutations
-        register: async (_, { input }, { dataSources }) => {
-            console.log('API Gateway: Register resolver called with input:', input);
-            try {
-                return await dataSources.authAPI.register(input);
-            } catch (error) {
-                console.error('API Gateway: Error in register resolver:', error);
-                throw error; // Re-throw the error so Apollo handles it
+        createEvent: async (_, { input }, { dataSources, token }) => {
+            if (!token) {
+                throw new Error('Authentication required: No token provided.');
             }
+            return dataSources.eventAPI.createEvent(input, token);
+        },
+        register: async (_, { input }, { dataSources }) => {
+            return dataSources.authAPI.register(input);
         },
         login: async (_, { input }, { dataSources }) => {
-            const result = await dataSources.authAPI.login(input);
-            if (result.requiresMfa) {
-                return { requiresMfa: true, userId: result.userId };
-            }
-            return result;
+            return dataSources.authAPI.login(input);
         },
-        refreshToken: async (_, __, { dataSources }) => {
-            return dataSources.authAPI.refreshToken();
+        refreshToken: async (_, { refreshToken }, { dataSources }) => {
+            return dataSources.authAPI.refreshToken(refreshToken);
         },
-        logout: async (_, __, { dataSources }) => {
-            return dataSources.authAPI.logout();
+        logout: async (_, { refreshToken }, { dataSources }) => {
+            return dataSources.authAPI.logout(refreshToken);
         },
-        generateMfaSecret: async (_, __, { dataSources, userId }) => {
-            return dataSources.authAPI.generateMfaSecret(userId);
+        updateUser: async (_, { input }, { dataSources, token }) => {
+            return dataSources.userAPI.updateUser(input, token);
         },
-        verifyMfaSetup: async (_, { token, secret }, { dataSources, userId }) => {
-            return dataSources.authAPI.verifyMfaSetup(userId, token, secret);
+        updatePreferences: async (_, { input }, { dataSources, token }) => {
+            return dataSources.userAPI.updatePreferences(input, token);
         },
-        enableMfa: async (_, { secret }, { dataSources, userId }) => {
-            return dataSources.authAPI.enableMfa(userId, secret);
+        createCalendar: async (_, { input }, { dataSources, token }) => {
+            return dataSources.calendarAPI.createCalendar(input, token);
         },
-        disableMfa: async (_, __, { dataSources, userId }) => {
-            return dataSources.authAPI.disableMfa(userId);
+        updateCalendar: async (_, { id, input }, { dataSources, token }) => {
+            return dataSources.calendarAPI.updateCalendar(id, input, token);
         },
-
-        // User mutations
-        updateUser: async (_, { input }, { dataSources, token, userId }) => {
-            return dataSources.userAPI.updateUser(input, token, userId);
+        deleteCalendar: async (_, { id }, { dataSources, token }) => {
+            return dataSources.calendarAPI.deleteCalendar(id, token);
         },
-        updatePreferences: async (_, { input }, { dataSources, token, userId }) => {
-            return dataSources.userAPI.updatePreferences(input, token, userId);
+        shareCalendar: async (_, { input }, { dataSources, token }) => {
+            return dataSources.calendarAPI.shareCalendar(input, token);
         },
-
-        // Calendar mutations
-        createCalendar: async (_, { input }, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.createCalendar(input, token, userId);
+        updateEvent: async (_, { id, input }, { dataSources, token }) => {
+            return dataSources.eventAPI.updateEvent(id, input, token);
         },
-        updateCalendar: async (_, { id, input }, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.updateCalendar(id, input, token, userId);
+        updateEventInstance: async (_, { eventId, instanceDate, input }, { dataSources, token }) => {
+            return dataSources.eventAPI.updateEventInstance(eventId, instanceDate, input, token);
         },
-        deleteCalendar: async (_, { id }, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.deleteCalendar(id, token, userId);
+        deleteEvent: async (_, { id, recurring }, { dataSources, token }) => {
+            return dataSources.eventAPI.deleteEvent(id, recurring, token);
         },
-        shareCalendar: async (_, { input }, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.shareCalendar(input, token, userId);
+        createReminder: async (_, { eventId, minutesBefore, method }, { dataSources, token }) => {
+            return dataSources.eventAPI.createReminder(eventId, minutesBefore, method, token);
         },
-
-        // Event mutations
-        createEvent: async (_, { input }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.createEvent(input, token, userId);
-        },
-        updateEvent: async (_, { id, input }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.updateEvent(id, input, token, userId);
-        },
-        updateEventInstance: async (_, { eventId, instanceDate, input }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.updateEventInstance(eventId, instanceDate, input, token, userId);
-        },
-        deleteEvent: async (_, { id, recurring }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.deleteEvent(id, recurring, token, userId);
-        },
-        createReminder: async (_, { eventId, minutesBefore, method }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.createReminder(eventId, minutesBefore, method, token, userId);
-        },
-        deleteReminder: async (_, { id }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.deleteReminder(id, token, userId);
+        deleteReminder: async (_, { id }, { dataSources, token }) => {
+            return dataSources.eventAPI.deleteReminder(id, token);
         },
     },
 
-    // Define resolvers for nested fields (e.g., User.preferences, Calendar.events)
     User: {
-        preferences: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.userAPI.getUserPreferences(parent.id, token, userId);
+        preferences: async (parent, _, { dataSources, token }) => {
+            return dataSources.userAPI.getUserPreferences(parent.id, token);
         },
     },
 
     Calendar: {
-        owner: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.userAPI.getUser(parent.owner_id, token, userId);
+        owner: async (parent, _, { dataSources, token }) => {
+            return dataSources.userAPI.getUser(parent.owner_id, token);
         },
-        events: async (parent, { start, end }, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.getCalendarEvents(parent.id, start, end, token, userId);
+        events: async (parent, { start, end }, { dataSources, token }) => {
+            return dataSources.eventAPI.getCalendarEvents(parent.id, start, end, token);
         },
-        shares: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.getCalendarShares(parent.id, token, userId);
+        shares: async (parent, _, { dataSources, token }) => {
+            return dataSources.calendarAPI.getCalendarShares(parent.id, token);
         },
     },
 
     Event: {
-        calendar: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.calendarAPI.getCalendar(parent.calendar_id, token, userId);
+        calendar: async (parent, _, { dataSources, token }) => {
+            return dataSources.calendarAPI.getCalendar(parent.calendar_id, token);
         },
-        createdBy: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.userAPI.getUser(parent.created_by, token, userId);
+        createdBy: async (parent, _, { dataSources, token }) => {
+            return dataSources.userAPI.getUser(parent.created_by, token);
         },
-        reminders: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.getEventReminders(parent.id, token, userId);
+        reminders: async (parent, _, { dataSources, token }) => {
+            return dataSources.eventAPI.getEventReminders(parent.id, token);
         },
-        attendees: async (parent, _, { dataSources, token, userId }) => {
-            return dataSources.eventAPI.getEventAttendees(parent.id, token, userId);
+        attendees: async (parent, _, { dataSources, token }) => {
+            return dataSources.eventAPI.getEventAttendees(parent.id, token);
+        },
+        recurrenceRule: async (parent, _, { dataSources, token }) => {
+            if (!parent.recurrence_rule_id) return null;
+            return dataSources.eventAPI.getRecurrenceRule(parent.recurrence_rule_id, token);
         },
     },
-
-    // Define additional nested resolvers
 };
 
 module.exports = resolvers;

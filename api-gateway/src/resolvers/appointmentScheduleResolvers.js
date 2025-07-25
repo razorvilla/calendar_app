@@ -30,7 +30,7 @@ const appointmentScheduleResolvers = {
       return dataSources.calendarService.updateAppointmentSlot(id, input);
     },
     deleteAppointmentSlot: async (_, { id }, { dataSources }) => {
-      return dataSources.calendarService.deleteAppointmentSlot(id);
+      return dataSources.calendarAPI.deleteAppointmentSlot(id);
     },
   },
 };

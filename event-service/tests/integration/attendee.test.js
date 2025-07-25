@@ -1,6 +1,6 @@
+require('../setup');
 const request = require('supertest');
-const createServer = require('../../src/index');
-const app = createServer();
+const app = require('../../src/index');
 const pool = require('../../src/db/pool');
 const jwt = require('jsonwebtoken');
 
@@ -15,6 +15,8 @@ describe('Attendee API Integration Tests', () => {
     beforeAll(() => {
         process.env.JWT_SECRET = 'test_jwt_secret';
         accessToken = jwt.sign({ userId: userId }, process.env.JWT_SECRET);
+        jest.spyOn(jwt, 'verify').mockReturnValue({ userId: userId });
+        
     });
 
     beforeEach(() => {
@@ -26,7 +28,7 @@ describe('Attendee API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: eventId, access_role: 'owner' }] }); // Event access
         pool.query.mockResolvedValueOnce({ rows: [{ id: attendeeId, event_id: eventId, user_id: userId, email: 'attendee@example.com' }] }); // Attendees
 
-        const res = await request(createServer())
+        const res = await request(app)
             .get(`/events/${eventId}/attendees`)
             .set('Authorization', `Bearer ${accessToken}`);
 
@@ -41,7 +43,7 @@ describe('Attendee API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'user2', email: 'attendee@example.com' }] }); // User check
         pool.query.mockResolvedValueOnce({ rows: [{ id: attendeeId, event_id: eventId, user_id: 'user2', email: 'attendee@example.com' }] }); // Insert attendee
 
-        const res = await request(createServer())
+        const res = await request(app)
             .post(`/events/${eventId}/attendees`)
             .set('Authorization', `Bearer ${accessToken}`)
             .send({
@@ -57,7 +59,7 @@ describe('Attendee API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: attendeeId, event_id: eventId, user_id: userId, email: 'attendee@example.com' }] }); // Attendee check
         pool.query.mockResolvedValueOnce({ rows: [{ id: attendeeId, response_status: 'accepted' }] }); // Update attendee
 
-        const res = await request(createServer())
+        const res = await request(app)
             .patch(`/events/${eventId}/attendees/${attendeeId}`)
             .set('Authorization', `Bearer ${accessToken}`)
             .send({
@@ -73,7 +75,7 @@ describe('Attendee API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: attendeeId, event_id: eventId, user_id: userId }] }); // Attendee check
         pool.query.mockResolvedValueOnce({}); // Delete attendee
 
-        const res = await request(createServer())
+        const res = await request(app)
             .delete(`/events/${eventId}/attendees/${attendeeId}`)
             .set('Authorization', `Bearer ${accessToken}`);
 

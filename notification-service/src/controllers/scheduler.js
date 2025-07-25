@@ -1,8 +1,8 @@
 const cron = require('node-cron');
-const Notification = require('../../models/notification');
-const logger = require('../../utils/logger');
-const notificationController = require('./notification');
-const queueService = require('../services/queueService');
+const Notification = require('@models/notification');
+const logger = require('@utils/logger');
+const notificationController = require('@controllers/notification');
+const queueService = require('@services/queueService');
 
 // Configuration
 const DEFAULT_BATCH_SIZE = 100;

@@ -1,79 +1,161 @@
-const { RESTDataSource } = require('apollo-datasource-rest');
+const axios = require('axios');
 
-class EventAPI extends RESTDataSource {
-  constructor() {
-    super();
-    this.baseURL = process.env.EVENT_SERVICE_URL || 'http://localhost:3004';
-  }
-
-  async getEvents(calendarIds, start, end, token, userId) {
-    const params = {
-      start,
-      end,
-    };
-    if (calendarIds && calendarIds.length > 0) {
-      params.calendarIds = calendarIds.join(',');
+class EventAPI {
+    constructor() {
+        this.baseURL = process.env.EVENT_SERVICE_URL;
+        this.client = axios.create({
+            baseURL: this.baseURL,
+        });
     }
-    return this.get('events', params, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
 
-  async getEvent(id, token, userId) {
-    return this.get(`events/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    _setAuthHeader(token) {
+        return {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        };
+    }
 
-  async createEvent(input, token, userId) {
-    return this.post('events', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getEvents(calendarIds, start, end, token) {
+        try {
+            let url = `/events?start=${start}&end=${end}`;
+            if (calendarIds && calendarIds.length > 0) {
+                url += `&calendarIds=${calendarIds.join(',')}`;
+            }
+            const response = await this.client.get(url, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching events:', error.response?.data || error.message);
+            return [];
+        }
+    }
 
-  async updateEvent(id, input, token, userId) {
-    return this.patch(`events/${id}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getCalendarEvents(calendarId, start, end, token) {
+        try {
+            let url = `/events?calendarIds=${calendarId}`;
+            if (start && end) {
+                url += `&start=${start}&end=${end}`;
+            }
+            const response = await this.client.get(url, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching events for calendar ${calendarId}:`, error.response?.data || error.message);
+            return [];
+        }
+    }
 
-  async deleteEvent(id, recurring, token, userId) {
-    const params = recurring ? { recurring } : undefined;
-    return this.delete(`events/${id}`, params, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getEvent(eventId, token) {
+        try {
+            const response = await this.client.get(`/events/${eventId}`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching event ${eventId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
 
-  async updateEventInstance(eventId, instanceDate, input, token, userId) {
-    return this.patch(`events/${eventId}/instance/${instanceDate}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async createEvent(input, token) {
+        console.log('EventAPI: createEvent called with input:', input, 'and token:', token);
+        try {
+            const response = await this.client.post('/events', input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error creating event:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async createReminder(eventId, minutesBefore, method, token, userId) {
-    return this.post(`events/${eventId}/reminders`, { minutesBefore, method }, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async updateEvent(id, input, token) {
+        try {
+            const response = await this.client.patch(`/events/${id}`, input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating event ${id}:`, error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async deleteReminder(id, token, userId) {
-    return this.delete(`events/reminders/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async updateEventInstance(eventId, instanceDate, input, token) {
+        try {
+            const response = await this.client.patch(
+                `/events/${eventId}/instances/${instanceDate}`,
+                input,
+                this._setAuthHeader(token)
+            );
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating event instance ${eventId}/${instanceDate}:`, error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async getEventReminders(eventId, token, userId) {
-    return this.get(`events/${eventId}/reminders`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async deleteEvent(id, recurring, token) {
+        try {
+            let url = `/events/${id}`;
+            if (recurring) {
+                url += `?recurring=${recurring}`;
+            }
+            await this.client.delete(url, this._setAuthHeader(token));
+            return true;
+        } catch (error) {
+            console.error(`Error deleting event ${id}:`, error.response?.data || error.message);
+            return false;
+        }
+    }
 
-  async getEventAttendees(eventId, token, userId) {
-    return this.get(`events/${eventId}/attendees`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getEventReminders(eventId, token) {
+        try {
+            const response = await this.client.get(`/events/${eventId}/reminders`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching reminders for event ${eventId}:`, error.response?.data || error.message);
+            return [];
+        }
+    }
 
-  // Task methods
-  async getTask(id, token, userId) {
-    return this.get(`tasks/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async createReminder(eventId, minutesBefore, method, token) {
+        try {
+            const response = await this.client.post(
+                `/events/${eventId}/reminders`,
+                { minutesBefore, method },
+                this._setAuthHeader(token)
+            );
+            return response.data;
+        } catch (error) {
+            console.error(`Error creating reminder for event ${eventId}:`, error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async getTasks(token, userId) {
-    return this.get('tasks', undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async deleteReminder(id, token) {
+        try {
+            await this.client.delete(`/reminders/${id}`, this._setAuthHeader(token));
+            return true;
+        } catch (error) {
+            console.error(`Error deleting reminder ${id}:`, error.response?.data || error.message);
+            return false;
+        }
+    }
 
-  async createTask(input, token, userId) {
-    return this.post('tasks', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getEventAttendees(eventId, token) {
+        try {
+            const response = await this.client.get(`/events/${eventId}/attendees`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching attendees for event ${eventId}:`, error.response?.data || error.message);
+            return [];
+        }
+    }
 
-  async updateTask(id, input, token, userId) {
-    return this.put(`tasks/${id}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async deleteTask(id, token, userId) {
-    return this.delete(`tasks/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getRecurrenceRule(recurrenceRuleId, token) {
+        try {
+            const response = await this.client.get(`/recurrence-rules/${recurrenceRuleId}`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching recurrence rule ${recurrenceRuleId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
 }
 
 module.exports = EventAPI;

@@ -1,6 +1,6 @@
+require('../setup');
 const request = require('supertest');
-const createServer = require('../../src/index');
-const app = createServer();
+const app = require('../../src/index');
 const pool = require('../../src/db/pool');
 const jwt = require('jsonwebtoken');
 
@@ -14,6 +14,8 @@ describe('Reminder API Integration Tests', () => {
     beforeAll(() => {
         process.env.JWT_SECRET = 'test_jwt_secret';
         accessToken = jwt.sign({ userId: userId }, process.env.JWT_SECRET);
+        jest.spyOn(jwt, 'verify').mockReturnValue({ userId: userId });
+        
     });
 
     beforeEach(() => {
@@ -25,7 +27,7 @@ describe('Reminder API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: eventId, access_role: 'owner' }] }); // Event access
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'reminder1', event_id: eventId, user_id: userId }] }); // Reminders
 
-        const res = await request(createServer())
+        const res = await request(app)
             .get(`/events/${eventId}/reminders`)
             .set('Authorization', `Bearer ${accessToken}`);
 
@@ -39,7 +41,7 @@ describe('Reminder API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [] }); // Reminder check (not exists)
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'new-reminder-id', event_id: eventId, user_id: userId, minutes_before: 10, method: 'notification' }] }); // Insert reminder
 
-        const res = await request(createServer())
+        const res = await request(app)
             .post(`/events/${eventId}/reminders`)
             .set('Authorization', `Bearer ${accessToken}`)
             .send({
@@ -55,7 +57,7 @@ describe('Reminder API Integration Tests', () => {
         pool.query.mockResolvedValueOnce({ rows: [{ id: 'reminder1', user_id: userId }] }); // Reminder ownership
         pool.query.mockResolvedValueOnce({}); // Delete reminder
 
-        const res = await request(createServer())
+        const res = await request(app)
             .delete(`/events/reminders/reminder1`)
             .set('Authorization', `Bearer ${accessToken}`);
 

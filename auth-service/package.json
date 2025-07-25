@@ -1,13 +1,12 @@
 {
   "name": "auth-service",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "lint": "eslint .",
-    "test": "jest --forceExit",
-    "test:integration": "jest --forceExit tests/integration"
+    "test": "jest --forceExit"
   },
   "keywords": [],
   "author": "",

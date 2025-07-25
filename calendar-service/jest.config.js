@@ -1,7 +1,7 @@
 module.exports = {
-    testEnvironment: 'node',
     setupFilesAfterEnv: ['./tests/setup.js'],
-    coveragePathIgnorePatterns: [
-        '/node_modules/'
+    testPathIgnorePatterns: [
+        '/node_modules/',
+        '/tests/integration/setup.js' // Exclude setup file from test execution
     ]
 };

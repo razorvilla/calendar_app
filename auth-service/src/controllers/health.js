@@ -1,16 +1,8 @@
 const pool = require('../db/pool');
 
-/**
- * Check service health
- *
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
 const checkHealth = async (req, res) => {
     try {
-        // Check database connection
         await pool.query('SELECT 1');
-
         res.json({
             status: 'healthy',
             timestamp: new Date().toISOString(),

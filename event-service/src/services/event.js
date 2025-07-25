@@ -3,7 +3,6 @@ const pool = require('../db/pool');
 const { getEventOccurrences, calculateOccurrenceEnd } = require('../utils/recurrence');
 
 const getEvents = async (userId, start, end, calendarIds) => {
-    // Validate date range
     if (!start || !end) {
         throw new Error('Start and end dates are required');
     }
@@ -15,13 +14,11 @@ const getEvents = async (userId, start, end, calendarIds) => {
         throw new Error('Invalid date format');
     }
 
-    // Get accessible calendars if none specified
     let calendars = [];
 
     if (calendarIds) {
         calendars = calendarIds.split(',');
     } else {
-        // Get all accessible calendars
         const accessibleCalendarsResult = await pool.query(
             `SELECT c.id FROM calendars c
              WHERE c.owner_id = $1
@@ -39,7 +36,6 @@ const getEvents = async (userId, start, end, calendarIds) => {
         return [];
     }
 
-    // Check calendar access permissions
     for (const calendarId of calendars) {
         const accessCheck = await pool.query(
             `SELECT COUNT(*) FROM (
@@ -57,13 +53,12 @@ const getEvents = async (userId, start, end, calendarIds) => {
         }
     }
 
-    // Get non-recurring events
     const nonRecurringEventsResult = await pool.query(
         `SELECT e.*, c.name as calendar_name, c.color as calendar_color
            FROM events e
            JOIN calendars c ON e.calendar_id = c.id
            WHERE e.calendar_id = ANY($1::uuid[])
-           AND e.recurrence_rule IS NULL
+           AND NOT EXISTS (SELECT 1 FROM recurrence_rules rr WHERE rr.event_id = e.id)
            AND (
              (e.start_time >= $2::timestamp AND e.start_time <= $3::timestamp)
              OR (e.end_time >= $2::timestamp AND e.end_time <= $3::timestamp)
@@ -72,23 +67,20 @@ const getEvents = async (userId, start, end, calendarIds) => {
         [calendars, start, end]
     );
 
-    // Get recurring events
     const recurringEventsResult = await pool.query(
-        `SELECT e.*, c.name as calendar_name, c.color as calendar_color
+        `SELECT e.*, c.name as calendar_name, c.color as calendar_color, rr.frequency, rr.interval, rr.count, rr.until, rr.by_day 
            FROM events e
            JOIN calendars c ON e.calendar_id = c.id
+           JOIN recurrence_rules rr ON e.id = rr.event_id
            WHERE e.calendar_id = ANY($1::uuid[])
-           AND e.recurrence_rule IS NOT NULL
            AND e.start_time <= $3::timestamp`,
         [calendars, start, end]
     );
 
-    // Process recurring events to generate occurrences
     const recurringEvents = [];
 
     for (const event of recurringEventsResult.rows) {
         try {
-            // Parse exception dates
             let exceptionDates = [];
             if (event.exception_dates) {
                 exceptionDates = Array.isArray(event.exception_dates)
@@ -96,17 +88,15 @@ const getEvents = async (userId, start, end, calendarIds) => {
                     : JSON.parse(event.exception_dates);
             }
 
-            // Get occurrences within range
             const startTime = new Date(event.start_time);
             const occurrences = getEventOccurrences(
-                event.recurrence_rule,
+                event,
                 startTime,
                 new Date(start),
                 new Date(end),
                 exceptionDates
             );
 
-            // Get modified instances for this event
             const instancesResult = await pool.query(
                 `SELECT * FROM event_instances 
                    WHERE event_id = $1 
@@ -117,16 +107,15 @@ const getEvents = async (userId, start, end, calendarIds) => {
 
             const instances = instancesResult.rows;
 
-            // Generate event instances
             for (const occurrenceDate of occurrences) {
-                // Format the date for instance lookup
+                if (!occurrenceDate) {
+                    continue;
+                }
                 const dateStr = occurrenceDate.toISOString().split('T')[0];
 
-                // Check if there's a modified instance
                 const instance = instances.find(i => i.instance_date === dateStr);
 
                 if (instance) {
-                    // Use modified instance data
                     recurringEvents.push({
                         ...event,
                         id: `${event.id}_${dateStr}`,
@@ -139,9 +128,7 @@ const getEvents = async (userId, start, end, calendarIds) => {
                         instance_date: dateStr
                     });
                 } else {
-                    // Calculate start and end times for this occurrence
                     const instanceStart = new Date(occurrenceDate);
-                    // Match the time component from the original event
                     instanceStart.setHours(
                         startTime.getHours(),
                         startTime.getMinutes(),
@@ -169,11 +156,9 @@ const getEvents = async (userId, start, end, calendarIds) => {
             }
         } catch (error) {
             console.error(`Error processing recurring event ${event.id}:`, error);
-            // Skip this event if there's an error processing the recurrence
         }
     }
 
-    // Combine all events
     const events = [
         ...nonRecurringEventsResult.rows,
         ...recurringEvents
@@ -183,25 +168,18 @@ const getEvents = async (userId, start, end, calendarIds) => {
 };
 
 const createEvent = async (userId, eventData) => {
-    console.log('Event Service: createEvent received eventData:', eventData);
+    console.log('Event Service: createEvent - User ID:', userId);
+    console.log('Event Service: createEvent - Event Data:', eventData);
     const {
         calendarId, title, description, location,
         startTime, endTime, isAllDay, recurrenceRule,
         color, visibility, reminderMinutes, attendees
     } = eventData;
 
-    console.log('Event Service: createEvent - userId:', userId);
-    console.log('Event Service: createEvent - calendarId:', calendarId);
-    console.log('Event Service: createEvent - title:', title);
-    console.log('Event Service: createEvent - startTime:', startTime);
-    console.log('Event Service: createEvent - endTime:', endTime);
-
-    // Validate required fields
     if (!calendarId || !title || !startTime || !endTime) {
         throw new Error('Calendar ID, title, start time, and end time are required');
     }
 
-    // Check calendar access
     const accessCheck = await pool.query(
         `SELECT c.*, 
           CASE WHEN c.owner_id = $1 THEN 'owner'
@@ -215,47 +193,44 @@ const createEvent = async (userId, eventData) => {
     );
 
     if (accessCheck.rows.length === 0) {
-        console.error('Event Service: Calendar not found for ID:', calendarId, 'and User ID:', userId);
         throw new Error('Calendar not found');
     }
 
     if (accessCheck.rows[0].access_role === 'view') {
-        console.error('Event Service: Permission denied for calendar:', calendarId, 'user:', userId, 'role:', accessCheck.rows[0].access_role);
         throw new Error('Permission denied');
     }
 
-    // Begin transaction
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
-        // Create event
         const eventId = uuidv4();
 
-        console.log('Event Service: Executing INSERT query for event:', {
-            eventId, calendarId, title, description, location,
-            startTime, endTime, isAllDay, recurrenceRule,
-            color, visibility: visibility || 'default', status: 'confirmed', createdBy: userId
-        });
         const eventResult = await client.query(
             `INSERT INTO events (
           id, calendar_id, title, description, location, 
-          start_time, end_time, is_all_day, recurrence_rule,
+          start_time, end_time, is_all_day, 
           color, visibility, status, created_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *, created_at`,
             [
                 eventId, calendarId, title, description, location,
-                startTime, endTime, isAllDay || false, recurrenceRule,
+                startTime, endTime, isAllDay || false,
                 color, visibility || 'default', 'confirmed', userId
             ]
         );
 
         const event = eventResult.rows[0];
-        console.log('Event Service: INSERT query result for event:', event);
 
-        // Create reminder if requested
+        if (recurrenceRule) {
+            await client.query(
+                `INSERT INTO recurrence_rules (event_id, frequency, interval, count, until, by_day)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [eventId, recurrenceRule.frequency, recurrenceRule.interval, recurrenceRule.count, recurrenceRule.until, recurrenceRule.byDay]
+            );
+        }
+
         if (reminderMinutes) {
             await client.query(
                 `INSERT INTO reminders
@@ -265,7 +240,6 @@ const createEvent = async (userId, eventData) => {
             );
         }
 
-        // Create attendees if provided
         if (attendees && attendees.length > 0) {
             for (const attendee of attendees) {
                 await client.query(
@@ -279,7 +253,6 @@ const createEvent = async (userId, eventData) => {
 
         await client.query('COMMIT');
 
-        // Fetch calendar information
         const calendarResult = await pool.query(
             'SELECT name, color FROM calendars WHERE id = $1',
             [calendarId]
@@ -300,7 +273,6 @@ const createEvent = async (userId, eventData) => {
 };
 
 const getEvent = async (userId, id) => {
-    // Check if it's a recurring instance
     const isRecurringInstance = id.includes('_');
 
     let eventId = id;
@@ -310,10 +282,9 @@ const getEvent = async (userId, id) => {
         [eventId, instanceDate] = id.split('_');
     }
 
-    // Check event access
     const eventResult = await pool.query(
         `SELECT e.*, c.name as calendar_name, c.color as calendar_color,
-              c.owner_id as calendar_owner_id,
+              c.owner_id as calendar_owner_id, rr.frequency, rr.interval, rr.count, rr.until, rr.by_day,
               CASE WHEN c.owner_id = $1 THEN 'owner'
                    WHEN cs.permission = 'edit' THEN 'edit'
                    WHEN cs.permission = 'view' THEN 'view'
@@ -322,6 +293,7 @@ const getEvent = async (userId, id) => {
               END as access_role
        FROM events e
        JOIN calendars c ON e.calendar_id = c.id
+       LEFT JOIN recurrence_rules rr ON e.id = rr.event_id
        LEFT JOIN calendar_shares cs ON c.id = cs.calendar_id AND cs.user_id = $1
        WHERE e.id = $2`,
         [userId, eventId]
@@ -333,18 +305,15 @@ const getEvent = async (userId, id) => {
 
     let event = eventResult.rows[0];
 
-    // Check access permissions
     if (event.access_role === 'none') {
         throw new Error('Access denied');
     }
 
-    // If it's a recurring instance, get the instance data
     if (isRecurringInstance && instanceDate) {
-        if (!event.recurrence_rule) {
+        if (!event.frequency) {
             throw new Error('Event is not recurring');
         }
 
-        // Check if it's an exception
         const instanceResult = await pool.query(
             `SELECT * FROM event_instances 
              WHERE event_id = $1 AND instance_date = $2::date`,
@@ -366,17 +335,15 @@ const getEvent = async (userId, id) => {
                 instance_date: instanceDate
             };
         } else {
-            // Calculate instance times based on recurrence rule
             try {
                 const startTime = new Date(event.start_time);
                 const parsedDate = new Date(`${instanceDate}T00:00:00Z`);
 
-                // Verify this date is in the recurrence pattern
                 const occurrences = getEventOccurrences(
-                    event.recurrence_rule,
+                    event,
                     startTime,
-                    new Date(parsedDate.getTime() - 86400000), // 1 day before
-                    new Date(parsedDate.getTime() + 86400000), // 1 day after
+                    new Date(parsedDate.getTime() - 86400000),
+                    new Date(parsedDate.getTime() + 86400000),
                     event.exception_dates
                 );
 
@@ -388,9 +355,7 @@ const getEvent = async (userId, id) => {
                     throw new Error('Event instance not found');
                 }
 
-                // Calculate start and end times for this occurrence
                 const instanceStart = new Date(matchingDate);
-                // Match the time component from the original event
                 instanceStart.setHours(
                     startTime.getHours(),
                     startTime.getMinutes(),
@@ -421,7 +386,6 @@ const getEvent = async (userId, id) => {
         }
     }
 
-    // Get reminders for this user
     const remindersResult = await pool.query(
         'SELECT * FROM reminders WHERE event_id = $1 AND user_id = $2',
         [eventId, userId]
@@ -429,7 +393,6 @@ const getEvent = async (userId, id) => {
 
     event.reminders = remindersResult.rows;
 
-    // Get attendees
     const attendeesResult = await pool.query(
         'SELECT * FROM event_attendees WHERE event_id = $1',
         [eventId]
@@ -441,18 +404,15 @@ const getEvent = async (userId, id) => {
 };
 
 const updateEvent = async (userId, eventId, eventData) => {
-    console.log('Event Service: updateEvent received eventId:', eventId, 'eventData:', eventData);
     const {
         title, description, location, startTime, endTime,
         isAllDay, recurrenceRule, color, visibility, status
     } = eventData;
 
-    // Check if it's a recurring instance
     if (eventId.includes('_')) {
         throw new Error('Cannot update recurring instance directly. Use /events/:id/instance/:date endpoint');
     }
 
-    // Check event access
     const accessCheck = await pool.query(
         `SELECT e.*,
               c.owner_id as calendar_owner_id,
@@ -478,107 +438,130 @@ const updateEvent = async (userId, eventId, eventData) => {
         throw new Error('Permission denied');
     }
 
-    // Build update query
-    let updateFields = [];
-    let values = [];
-    let paramCount = 1;
+    const client = await pool.connect();
 
-    if (title !== undefined) {
-        updateFields.push(`title = $${paramCount}`);
-        values.push(title);
-        paramCount++;
+    try {
+        await client.query('BEGIN');
+
+        let updateFields = [];
+        let values = [];
+        let paramCount = 1;
+
+        if (title !== undefined) {
+            updateFields.push(`title = ${paramCount}`);
+            values.push(title);
+            paramCount++;
+        }
+
+        if (description !== undefined) {
+            updateFields.push(`description = ${paramCount}`);
+            values.push(description);
+            paramCount++;
+        }
+
+        if (location !== undefined) {
+            updateFields.push(`location = ${paramCount}`);
+            values.push(location);
+            paramCount++;
+        }
+
+        if (startTime !== undefined) {
+            updateFields.push(`start_time = ${paramCount}`);
+            values.push(startTime);
+            paramCount++;
+        }
+
+        if (endTime !== undefined) {
+            updateFields.push(`end_time = ${paramCount}`);
+            values.push(endTime);
+            paramCount++;
+        }
+
+        if (isAllDay !== undefined) {
+            updateFields.push(`is_all_day = ${paramCount}`);
+            values.push(isAllDay);
+            paramCount++;
+        }
+
+        if (color !== undefined) {
+            updateFields.push(`color = ${paramCount}`);
+            values.push(color);
+            paramCount++;
+        }
+
+        if (visibility !== undefined) {
+            updateFields.push(`visibility = ${paramCount}`);
+            values.push(visibility);
+            paramCount++;
+        }
+
+        if (status !== undefined) {
+            updateFields.push(`status = ${paramCount}`);
+            values.push(status);
+            paramCount++;
+        }
+
+        updateFields.push(`version = version + 1, updated_at = NOW()`);
+
+        if (updateFields.length > 0) {
+            values.push(eventId);
+            await client.query(
+                `UPDATE events SET ${updateFields.join(', ')} WHERE id = ${paramCount}`,
+                values
+            );
+        }
+
+        if (recurrenceRule) {
+            // Check if a recurrence rule already exists for this event
+            const existingRecurrence = await client.query(
+                'SELECT * FROM recurrence_rules WHERE event_id = $1',
+                [eventId]
+            );
+
+            if (existingRecurrence.rows.length > 0) {
+                // Update existing recurrence rule
+                await client.query(
+                    `UPDATE recurrence_rules SET frequency = $1, interval = $2, count = $3, until = $4, by_day = $5 WHERE event_id = $6`,
+                    [recurrenceRule.frequency, recurrenceRule.interval, recurrenceRule.count, recurrenceRule.until, recurrenceRule.byDay, eventId]
+                );
+            } else {
+                // Insert new recurrence rule
+                await client.query(
+                    `INSERT INTO recurrence_rules (event_id, frequency, interval, count, until, by_day)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [eventId, recurrenceRule.frequency, recurrenceRule.interval, recurrenceRule.count, recurrenceRule.until, recurrenceRule.byDay]
+                );
+            }
+        } else {
+            // If recurrenceRule is explicitly null or undefined, delete any existing rule
+            await client.query(
+                `DELETE FROM recurrence_rules WHERE event_id = $1`,
+                [eventId]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        const result = await pool.query('SELECT * FROM events WHERE id = $1', [eventId]);
+        const updatedEvent = result.rows[0];
+
+        const calendarResult = await pool.query(
+            'SELECT name, color FROM calendars WHERE id = $1',
+            [updatedEvent.calendar_id]
+        );
+
+        if (calendarResult.rows.length > 0) {
+            updatedEvent.calendar_name = calendarResult.rows[0].name;
+            updatedEvent.calendar_color = calendarResult.rows[0].color;
+        }
+
+        return updatedEvent;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
     }
-
-    if (description !== undefined) {
-        updateFields.push(`description = $${paramCount}`);
-        values.push(description);
-        paramCount++;
-    }
-
-    if (location !== undefined) {
-        updateFields.push(`location = $${paramCount}`);
-        values.push(location);
-        paramCount++;
-    }
-
-    if (startTime !== undefined) {
-        updateFields.push(`start_time = $${paramCount}`);
-        values.push(startTime);
-        paramCount++;
-    }
-
-    if (endTime !== undefined) {
-        updateFields.push(`end_time = $${paramCount}`);
-        values.push(endTime);
-        paramCount++;
-    }
-
-    if (isAllDay !== undefined) {
-        updateFields.push(`is_all_day = $${paramCount}`);
-        values.push(isAllDay);
-        paramCount++;
-    }
-
-    if (recurrenceRule !== undefined) {
-        updateFields.push(`recurrence_rule = $${paramCount}`);
-        values.push(recurrenceRule);
-        paramCount++;
-    }
-
-    if (color !== undefined) {
-        updateFields.push(`color = $${paramCount}`);
-        values.push(color);
-        paramCount++;
-    }
-
-    if (visibility !== undefined) {
-        updateFields.push(`visibility = $${paramCount}`);
-        values.push(visibility);
-        paramCount++;
-    }
-
-    if (status !== undefined) {
-        updateFields.push(`status = $${paramCount}`);
-        values.push(status);
-        paramCount++;
-    }
-
-    // Add version increment and updated_at
-    updateFields.push(`version = version + 1, updated_at = NOW()`);
-
-    // Return if no fields to update
-    if (updateFields.length <= 1) {
-        return event;
-    }
-
-    // Add ID to values
-    values.push(eventId);
-
-    // Update event
-    console.log('Event Service: Executing UPDATE query for event:', {
-        eventId, updateFields, values
-    });
-    const result = await pool.query(
-        `UPDATE events SET ${updateFields.join(', ')} WHERE id = ${paramCount} RETURNING *`,
-        values
-    );
-
-    console.log('Event Service: UPDATE query result for event:', result.rows[0]);
-
-    // Get updated calendar info
-    const calendarResult = await pool.query(
-        'SELECT name, color FROM calendars WHERE id = $1',
-        [result.rows[0].calendar_id]
-    );
-
-    const updatedEvent = result.rows[0];
-
-    if (calendarResult.rows.length > 0) {
-        updatedEvent.calendar_name = calendarResult.rows[0].name;
-        updatedEvent.calendar_color = calendarResult.rows[0].color;
-    }
-
-    return updatedEvent;
 };
 
 const updateEventInstance = async (userId, eventId, date, eventData) => {
@@ -621,7 +604,7 @@ const updateEventInstance = async (userId, eventId, date, eventData) => {
         throw new Error('Permission denied');
     }
 
-    if (!event.recurrence_rule) {
+    if (!event.frequency) {
         throw new Error('Event is not recurring');
     }
 
@@ -805,7 +788,6 @@ const updateEventInstance = async (userId, eventId, date, eventData) => {
 };
 
 const deleteEvent = async (userId, eventId, recurringOption) => {
-    // Check if it's a recurring instance
     const isRecurringInstance = eventId.includes('_');
 
     let originalEventId = eventId;
@@ -815,9 +797,8 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
         [originalEventId, instanceDate] = eventId.split('_');
     }
 
-    // Check event access
     const accessCheck = await pool.query(
-        `SELECT e.*,
+        `SELECT e.*, rr.*,
               c.owner_id as calendar_owner_id,
               CASE WHEN c.owner_id = $1 THEN 'owner'
                    WHEN cs.permission = 'edit' THEN 'edit'
@@ -826,6 +807,7 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
               END as access_role
        FROM events e
        JOIN calendars c ON e.calendar_id = c.id
+       LEFT JOIN recurrence_rules rr ON e.id = rr.event_id
        LEFT JOIN calendar_shares cs ON c.id = cs.calendar_id AND cs.user_id = $1
        WHERE e.id = $2`,
         [userId, originalEventId]
@@ -841,15 +823,12 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
         throw new Error('Permission denied');
     }
 
-    // Begin transaction
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
-        // Handle recurring event deletions
         if (isRecurringInstance && instanceDate) {
-            // Add an exception date for this instance
             let exceptionDates = [];
 
             if (event.exception_dates) {
@@ -867,15 +846,12 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
                 [JSON.stringify(exceptionDates), originalEventId]
             );
 
-            // Delete any instance record if it exists
             await client.query(
                 'DELETE FROM event_instances WHERE event_id = $1 AND instance_date = $2',
                 [originalEventId, instanceDate]
             );
-        } else if (event.recurrence_rule && recurringOption) {
-            // Handle recurring event deletion options
+        } else if (event.frequency && recurringOption) {
             if (recurringOption === 'this') {
-                // Add today as exception date
                 let exceptionDates = [];
 
                 if (event.exception_dates) {
@@ -884,7 +860,6 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
                         : JSON.parse(event.exception_dates);
                 }
 
-                // Add today's date (or event date) as exception
                 const today = new Date().toISOString().split('T')[0];
                 if (!exceptionDates.includes(today)) {
                     exceptionDates.push(today);
@@ -895,33 +870,17 @@ const deleteEvent = async (userId, eventId, recurringOption) => {
                     [JSON.stringify(exceptionDates), originalEventId]
                 );
             } else if (recurringOption === 'future') {
-                // Modify the recurrence rule to end yesterday
-                try {
-                    const { rrulestr, RRule } = require('rrule');
-                    const rrule = rrulestr(event.recurrence_rule);
-                    const options = rrule.options;
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
 
-                    // Set until to yesterday
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    options.until = yesterday;
-
-                    const newRule = new (require('rrule').RRule)(options).toString();
-
-                    await client.query(
-                        'UPDATE events SET recurrence_rule = $1, updated_at = NOW() WHERE id = $2',
-                        [newRule, originalEventId]
-                    );
-                } catch (error) {
-                    console.error(`Error modifying recurrence rule for ${originalEventId}:`, error);
-                    throw new Error('Error modifying recurrence rule');
-                }
+                await client.query(
+                    'UPDATE recurrence_rules SET until = $1 WHERE event_id = $2',
+                    [yesterday, originalEventId]
+                );
             } else {
-                // Delete the entire recurring event series
                 await client.query('DELETE FROM events WHERE id = $1', [originalEventId]);
             }
         } else {
-            // Delete normal event
             await client.query('DELETE FROM events WHERE id = $1', [originalEventId]);
         }
 

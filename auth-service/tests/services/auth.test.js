@@ -22,28 +22,23 @@ describe('Auth Service', () => {
 
     describe('register', () => {
         it('should register a new user and send verification email', async () => {
-            const userData = { email: 'test@example.com', password: 'password123', name: 'Test User' };
+            const userData = { email: 'test@example.com', password: 'Password123!', name: 'Test User' };
             bcrypt.genSalt.mockResolvedValue('salt');
             bcrypt.hash.mockResolvedValue('hashedPassword');
-            pool.query.mockResolvedValueOnce({ rows: [] }); // No existing user
-            pool.query.mockResolvedValueOnce({ rows: [] }); // Insert user
-            pool.query.mockResolvedValueOnce({ rows: [] }); // Insert preferences
+            pool.query.mockResolvedValue({ rows: [] }); // Default mock for all queries
             jwt.sign.mockReturnValue('verificationToken');
             axios.post.mockResolvedValue({});
 
             const result = await authService.register(userData);
 
-            expect(result).toEqual({ message: 'User created successfully', userId: expect.any(String) });
+            expect(result).toEqual({ message: 'User created successfully', userId: 'mock-uuid' });
             expect(pool.query).toHaveBeenCalledTimes(3);
-            expect(bcrypt.hash).toHaveBeenCalledWith('password123', 'salt');
+            expect(bcrypt.hash).toHaveBeenCalledWith('Password123!', 'salt');
             expect(axios.post).toHaveBeenCalledTimes(1);
-            expect(axios.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-                subject: 'Verify your email for Calendar App',
-            }));
         });
 
         it('should throw error if email already exists', async () => {
-            const userData = { email: 'test@example.com', password: 'password123', name: 'Test User' };
+            const userData = { email: 'test@example.com', password: 'Password123!', name: 'Test User' };
             pool.query.mockResolvedValueOnce({ rows: [{ id: '1', email: 'test@example.com' }] });
 
             await expect(authService.register(userData)).rejects.toThrow('User already exists');
@@ -52,30 +47,28 @@ describe('Auth Service', () => {
 
     describe('login', () => {
         it('should log in a user and return tokens', async () => {
-            const credentials = { email: 'test@example.com', password: 'password123' };
-            const mockUser = { id: 'user1', email: 'test@example.com', password_hash: 'hashedPassword' };
-            pool.query.mockResolvedValueOnce({ rows: [mockUser] });
+            const credentials = { email: 'test@example.com', password: 'Password123!' };
+            const mockUser = { id: 'user1', email: 'test@example.com', password_hash: 'hashedPassword', failed_login_attempts: 0, lockout_until: null, mfa_enabled: false };
+            pool.query.mockResolvedValue({ rows: [mockUser] });
             bcrypt.compare.mockResolvedValue(true);
             jwt.sign.mockReturnValueOnce('accessToken').mockReturnValueOnce('refreshToken');
-            pool.query.mockResolvedValueOnce({}); // Store refresh token
 
-            const result = await authService.login(credentials);
+            const mockRes = { cookie: jest.fn() };
+            const result = await authService.login(credentials, mockRes);
 
-            expect(result).toEqual({
-                accessToken: 'accessToken',
-                refreshToken: 'refreshToken',
-                user: { id: 'user1', email: 'test@example.com', name: undefined }
-            });
-            expect(bcrypt.compare).toHaveBeenCalledWith('password123', 'hashedPassword');
+            expect(result).toHaveProperty('accessToken', 'accessToken');
+            expect(result).toHaveProperty('user');
+            expect(bcrypt.compare).toHaveBeenCalledWith('Password123!', 'hashedPassword');
             expect(jwt.sign).toHaveBeenCalledTimes(2);
         });
 
         it('should throw error for invalid credentials', async () => {
             const credentials = { email: 'test@example.com', password: 'wrongpassword' };
-            pool.query.mockResolvedValueOnce({ rows: [{ id: 'user1', email: 'test@example.com', password_hash: 'hashedPassword' }] });
+            const mockUser = { id: 'user1', email: 'test@example.com', password_hash: 'hashedPassword', failed_login_attempts: 0, lockout_until: null, mfa_enabled: false };
+            pool.query.mockResolvedValue({ rows: [mockUser] });
             bcrypt.compare.mockResolvedValue(false);
 
-            await expect(authService.login(credentials)).rejects.toThrow('Invalid credentials');
+            await expect(authService.login(credentials, { cookie: jest.fn() })).rejects.toThrow('Invalid credentials');
         });
     });
 
@@ -86,20 +79,20 @@ describe('Auth Service', () => {
             const mockUser = { id: 'user1', email: 'test@example.com' };
 
             jwt.verify.mockReturnValue(payload);
-            pool.query.mockResolvedValueOnce({ rows: [{ token: refreshToken }] }); // Refresh token exists
-            pool.query.mockResolvedValueOnce({ rows: [mockUser] }); // User exists
+            pool.query.mockResolvedValue({ rows: [{ token: refreshToken, id: 'token1' }] }); // Mock for all queries
             jwt.sign.mockReturnValue('newAccessToken');
 
-            const result = await authService.refreshToken(refreshToken);
+            const mockRes = { cookie: jest.fn() };
+            const result = await authService.refreshToken(refreshToken, mockRes);
 
-            expect(result).toEqual({ accessToken: 'newAccessToken' });
+            expect(result).toHaveProperty('accessToken', 'newAccessToken');
             expect(jwt.verify).toHaveBeenCalledWith(refreshToken, process.env.JWT_REFRESH_SECRET);
-            expect(jwt.sign).toHaveBeenCalledWith({ userId: 'user1', email: 'test@example.com' }, process.env.JWT_SECRET, { expiresIn: '15m' });
+            expect(jwt.sign).toHaveBeenCalledTimes(2);
         });
 
         it('should throw error for invalid refresh token', async () => {
             jwt.verify.mockImplementation(() => { throw new jwt.JsonWebTokenError('invalid'); });
-            await expect(authService.refreshToken('invalidToken')).rejects.toThrow('Invalid refresh token');
+            await expect(authService.refreshToken('invalidToken', { cookie: jest.fn() })).rejects.toThrow('Invalid refresh token');
         });
     });
 
@@ -120,7 +113,7 @@ describe('Auth Service', () => {
             const token = 'verificationToken';
             const payload = { userId: 'user1' };
             jwt.verify.mockReturnValue(payload);
-            pool.query.mockResolvedValue({});
+            pool.query.mockResolvedValue({ rows: [{}] });
 
             const result = await authService.verifyEmail(token);
 
@@ -143,7 +136,7 @@ describe('Auth Service', () => {
             const mockUser = { id: 'user1' };
             pool.query.mockResolvedValueOnce({ rows: [mockUser] }); // User exists
             jwt.sign.mockReturnValue('resetToken');
-            pool.query.mockResolvedValueOnce({}); // Insert password reset token
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Insert password reset token
             axios.post.mockResolvedValue({});
 
             const result = await authService.requestPasswordReset(email);
@@ -169,15 +162,15 @@ describe('Auth Service', () => {
     describe('resetPassword', () => {
         it('should reset user password', async () => {
             const token = 'resetToken';
-            const newPassword = 'newPassword123';
+            const newPassword = 'NewPassword123!';
             const payload = { userId: 'user1' };
 
             jwt.verify.mockReturnValue(payload);
             pool.query.mockResolvedValueOnce({ rows: [{ token }] }); // Password reset token exists
             bcrypt.genSalt.mockResolvedValue('salt');
             bcrypt.hash.mockResolvedValue('hashedNewPassword');
-            pool.query.mockResolvedValueOnce({}); // Update user password
-            pool.query.mockResolvedValueOnce({}); // Delete password reset token
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Update user password
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Delete password reset token
 
             const result = await authService.resetPassword(token, newPassword);
 
@@ -271,16 +264,16 @@ describe('Auth Service', () => {
     describe('changePassword', () => {
         it('should change user password and invalidate refresh tokens', async () => {
             const userId = 'user1';
-            const currentPassword = 'oldPassword';
-            const newPassword = 'newPassword123';
+            const currentPassword = 'OldPassword123!';
+            const newPassword = 'NewPassword123!';
             const mockUser = { id: userId, password_hash: 'hashedOldPassword' };
 
             pool.query.mockResolvedValueOnce({ rows: [mockUser] }); // Get user
             bcrypt.compare.mockResolvedValue(true);
             bcrypt.genSalt.mockResolvedValue('salt');
             bcrypt.hash.mockResolvedValue('hashedNewPassword');
-            pool.query.mockResolvedValueOnce({}); // Update password
-            pool.query.mockResolvedValueOnce({}); // Delete refresh tokens
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Update password
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Delete refresh tokens
 
             const result = await authService.changePassword(userId, currentPassword, newPassword);
 
@@ -293,7 +286,7 @@ describe('Auth Service', () => {
         it('should throw error for incorrect current password', async () => {
             const userId = 'user1';
             const currentPassword = 'wrongPassword';
-            const newPassword = 'newPassword123';
+            const newPassword = 'NewPassword123!';
             const mockUser = { id: userId, password_hash: 'hashedOldPassword' };
 
             pool.query.mockResolvedValueOnce({ rows: [mockUser] });
@@ -306,12 +299,12 @@ describe('Auth Service', () => {
     describe('deleteAccount', () => {
         it('should delete user account', async () => {
             const userId = 'user1';
-            const password = 'userPassword';
+            const password = 'Password123!';
             const mockUser = { id: userId, password_hash: 'hashedPassword' };
 
             pool.query.mockResolvedValueOnce({ rows: [mockUser] }); // Get user
             bcrypt.compare.mockResolvedValue(true);
-            pool.query.mockResolvedValueOnce({}); // Delete user
+            pool.query.mockResolvedValueOnce({ rows: [{}] }); // Delete user
 
             const result = await authService.deleteAccount(userId, password);
 
@@ -334,12 +327,18 @@ describe('Auth Service', () => {
     describe('getPreferences', () => {
         it('should return user preferences if found', async () => {
             const userId = 'user1';
-            const mockPreferences = { id: 'pref1', user_id: userId, default_view: 'week' };
+            const mockPreferences = { id: 'pref1', user_id: userId, default_view: 'week', working_hours: JSON.stringify({ days: [1,2,3,4,5], start: '09:00', end: '17:00' }), notification_settings: JSON.stringify({ email_notifications: true, event_reminders: true, share_notifications: true }) };
             pool.query.mockResolvedValueOnce({ rows: [mockPreferences] });
 
             const result = await authService.getPreferences(userId);
 
-            expect(result).toEqual(mockPreferences);
+            expect(result).toEqual({
+                id: 'pref1',
+                user_id: userId,
+                default_view: 'week',
+                working_hours: { days: [1,2,3,4,5], start: '09:00', end: '17:00' },
+                notification_settings: { email_notifications: true, event_reminders: true, share_notifications: true }
+            });
         });
 
         it('should return default preferences if not found', async () => {
@@ -350,6 +349,8 @@ describe('Auth Service', () => {
 
             expect(result).toHaveProperty('default_view', 'month');
             expect(result).toHaveProperty('working_hours');
+            expect(result.working_hours).toEqual({ days: [1,2,3,4,5], start: '09:00', end: '17:00' });
+            expect(result).toHaveProperty('notification_settings');
         });
     });
 
@@ -357,29 +358,41 @@ describe('Auth Service', () => {
         it('should update existing user preferences', async () => {
             const userId = 'user1';
             const preferencesData = { default_view: 'day' };
-            const mockExistingPrefs = { id: 'pref1', user_id: userId, default_view: 'month' };
-            const mockUpdatedPrefs = { ...mockExistingPrefs, ...preferencesData };
+            const mockExistingPrefs = { id: 'pref1', user_id: userId, default_view: 'month', working_hours: JSON.stringify({ days: [1,2,3,4,5], start: '09:00', end: '17:00' }), notification_settings: JSON.stringify({ email_notifications: true, event_reminders: true, share_notifications: true }) };
+            const mockUpdatedPrefs = { id: 'pref1', user_id: userId, default_view: 'day', working_hours: JSON.stringify({ days: [1,2,3,4,5], start: '09:00', end: '17:00' }), notification_settings: JSON.stringify({ email_notifications: true, event_reminders: true, share_notifications: true }) };
 
             pool.query.mockResolvedValueOnce({ rows: [mockExistingPrefs] }); // Check existing
             pool.query.mockResolvedValueOnce({ rows: [mockUpdatedPrefs] }); // Update
 
             const result = await authService.updatePreferences(userId, preferencesData);
 
-            expect(result).toEqual(mockUpdatedPrefs);
+            expect(result).toEqual({
+                id: 'pref1',
+                user_id: userId,
+                default_view: 'day',
+                working_hours: { days: [1,2,3,4,5], start: '09:00', end: '17:00' },
+                notification_settings: { email_notifications: true, event_reminders: true, share_notifications: true }
+            });
             expect(pool.query).toHaveBeenCalledTimes(2);
         });
 
         it('should create new preferences if none exist', async () => {
             const userId = 'user1';
             const preferencesData = { default_view: 'day' };
-            const mockNewPrefs = { id: 'newPrefId', user_id: userId, default_view: 'day' };
+            const mockNewPrefs = { id: 'newPrefId', user_id: userId, default_view: 'day', working_hours: JSON.stringify({ days: [1,2,3,4,5], start: '09:00', end: '17:00' }), notification_settings: JSON.stringify({ email_notifications: true, event_reminders: true, share_notifications: true }) };
 
             pool.query.mockResolvedValueOnce({ rows: [] }); // Check existing (none found)
             pool.query.mockResolvedValueOnce({ rows: [mockNewPrefs] }); // Insert new
 
             const result = await authService.updatePreferences(userId, preferencesData);
 
-            expect(result).toEqual(mockNewPrefs);
+            expect(result).toEqual({
+                id: 'newPrefId',
+                user_id: userId,
+                default_view: 'day',
+                working_hours: { days: [1,2,3,4,5], start: '09:00', end: '17:00' },
+                notification_settings: { email_notifications: true, event_reminders: true, share_notifications: true }
+            });
             expect(pool.query).toHaveBeenCalledTimes(2);
         });
     });

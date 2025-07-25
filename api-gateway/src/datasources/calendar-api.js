@@ -1,79 +1,93 @@
-const { RESTDataSource } = require('apollo-datasource-rest');
+const axios = require('axios');
 
-class CalendarAPI extends RESTDataSource {
-  constructor() {
-    super();
-    this.baseURL = process.env.CALENDAR_SERVICE_URL || 'http://localhost:3003';
-  }
+class CalendarAPI {
+    constructor() {
+        this.baseURL = process.env.CALENDAR_SERVICE_URL;
+        this.client = axios.create({
+            baseURL: this.baseURL,
+        });
+    }
 
-  async getCalendar(id, token, userId) {
-    return this.get(`calendars/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    _setAuthHeader(token) {
+        return {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        };
+    }
 
-  async getCalendars(token, userId) {
-    return this.get('calendars', undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getCalendars(token) {
+        try {
+            const response = await this.client.get('/calendars', this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching calendars:', error.response?.data || error.message);
+            return [];
+        }
+    }
 
-  async createCalendar(input, token, userId) {
-    return this.post('calendars', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getCalendar(calendarId, token) {
+        try {
+            const response = await this.client.get(`/calendars/${calendarId}`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching calendar ${calendarId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
 
-  async updateCalendar(id, input, token, userId) {
-    return this.put(`calendars/${id}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async createCalendar(input, token) {
+        try {
+            const response = await this.client.post('/calendars', input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error creating calendar:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async deleteCalendar(id, token, userId) {
-    return this.delete(`calendars/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async updateCalendar(id, input, token) {
+        try {
+            const response = await this.client.patch(`/calendars/${id}`, input, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error updating calendar ${id}:`, error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  async shareCalendar(input, token, userId) {
-    return this.post('calendar-shares', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async deleteCalendar(id, token) {
+        try {
+            await this.client.delete(`/calendars/${id}`, this._setAuthHeader(token));
+            return true;
+        } catch (error) {
+            console.error(`Error deleting calendar ${id}:`, error.response?.data || error.message);
+            return false;
+        }
+    }
 
-  async getCalendarShares(calendarId, token, userId) {
-    return this.get(`calendars/${calendarId}/shares`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async shareCalendar(input, token) {
+        try {
+            const response = await this.client.post(`/calendars/${input.calendarId}/share`, {
+                email: input.email,
+                permission: input.permission
+            }, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error('Error sharing calendar:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 
-  // Appointment Schedule methods
-  async getAppointmentSchedule(id, token, userId) {
-    return this.get(`appointments/schedules/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async getAppointmentSchedules(calendarId, token, userId) {
-    return this.get(`appointments/calendars/${calendarId}/schedules`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async createAppointmentSchedule(input, token, userId) {
-    return this.post('appointments/schedules', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async updateAppointmentSchedule(id, input, token, userId) {
-    return this.put(`appointments/schedules/${id}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async deleteAppointmentSchedule(id, token, userId) {
-    return this.delete(`appointments/schedules/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async createAppointmentSlot(input, token, userId) {
-    return this.post('appointments/slots', input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async getAppointmentSlot(id, token, userId) {
-    return this.get(`appointments/slots/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async getAppointmentSlots(scheduleId, token, userId) {
-    return this.get(`appointments/schedules/${scheduleId}/slots`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async updateAppointmentSlot(id, input, token, userId) {
-    return this.put(`appointments/slots/${id}`, input, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
-
-  async deleteAppointmentSlot(id, token, userId) {
-    return this.delete(`appointments/slots/${id}`, undefined, { headers: { Authorization: token, 'X-User-ID': userId } });
-  }
+    async getCalendarShares(calendarId, token) {
+        try {
+            const response = await this.client.get(`/calendars/${calendarId}/shares`, this._setAuthHeader(token));
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching shares for calendar ${calendarId}:`, error.response?.data || error.message);
+            return [];
+        }
+    }
 }
 
 module.exports = CalendarAPI;
